@@ -1,3 +1,5 @@
+"""The Configure form of a location entry."""
+
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.helpers.selector import (
@@ -43,7 +45,10 @@ async def async_validate_forecast(hass, user_input: dict):
 
 
 class HungaroMetOptionsFlowHandler(config_entries.OptionsFlow):
+    """The Configure form: station search radius, forecast settlement and location."""
+
     async def async_step_init(self, user_input=None):
+        """Show the form with the current settings, and save the new ones."""
         errors = {}
         if user_input is not None:
             settlement, errors = await async_validate_forecast(self.hass, user_input)

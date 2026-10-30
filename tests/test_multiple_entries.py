@@ -6,17 +6,21 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import custom_components.hungaromet_weather_and_forecast as integration
-from custom_components.hungaromet_weather_and_forecast.daily_sensor import HungarometWeatherDailySensor
-from custom_components.hungaromet_weather_and_forecast.hourly_sensor import HungarometWeatherHourlySensor
 from custom_components.hungaromet_weather_and_forecast.scope import EntryScope, device_info, scoped_id
-from custom_components.hungaromet_weather_and_forecast.station_info_sensor import (
-    HungarometStationInfoSensor,
-)
-from custom_components.hungaromet_weather_and_forecast.ten_minute_sensor import (
-    HungarometWeatherTenMinutesSensor,
+from custom_components.hungaromet_weather_and_forecast.station_sensor import (
+    FEEDS,
+    Measurement,
+    StationQuery,
+    StationSensor,
+    StationsSensor,
 )
 
 SCOPE = EntryScope("e1", "HungaroMet Pécs")
+QUERY = StationQuery(scope=SCOPE)
+
+
+def _sensor(feed, name, key, unit):
+    return StationSensor(None, FEEDS[feed], Measurement(name, key, unit), 0, QUERY)
 
 
 def test_scope_from_entry_and_ids():
@@ -40,22 +44,22 @@ def test_device_info_with_and_without_scope():
     ("entity", "unique_id", "device_id"),
     [
         (
-            HungarometWeatherDailySensor(None, "Napi párolgás", 0, "mm", "upe", scope=SCOPE),
+            _sensor("daily", "Napi párolgás", "upe", "mm"),
             "e1_hungaromet_weather_napi_párolgás",
             "e1_hungaromet_weather",
         ),
         (
-            HungarometWeatherHourlySensor(None, "Órás t", 0, "°C", "t", scope=SCOPE),
+            _sensor("hourly", "Órás t", "t", "°C"),
             "e1_hungaromet_weather_hourly_órás_t",
             "e1_hungaromet_weather_hourly",
         ),
         (
-            HungarometWeatherTenMinutesSensor(None, "T", 0, "°C", "t", scope=SCOPE),
+            _sensor("ten_minutes", "T", "t", "°C"),
             "e1_hungaromet_weather_ten_minutes_t",
             "e1_hungaromet_weather_ten_minutes",
         ),
         (
-            HungarometStationInfoSensor(None, "S", [], "hourly", scope=SCOPE),
+            StationsSensor(None, FEEDS["hourly"], [], QUERY),
             "e1_hungaromet_weather_station_info_hourly",
             "e1_hungaromet_weather_hourly",
         ),

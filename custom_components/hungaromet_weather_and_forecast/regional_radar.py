@@ -47,14 +47,18 @@ def latest_frame_urls(quadrant: str, count: int = FRAME_COUNT) -> list[str]:
     return [FRAME_URL.format(prefix=prefix, name=name) for name in names[-count:]]
 
 
+DEVICE_ID = "hungaromet_regional_radar"
+
+
 class HungarometRegionalRadarImage(RadarImage):
     """Animated met.hu radar image of the quadrant covering an entry's location."""
 
+    _label = "Regional radar"
+
     def __init__(self, hass, scope: EntryScope, quadrant: str):
-        super().__init__(hass, "Regional radar", "hungaromet_regional_radar")
+        super().__init__(hass, scoped_id(scope, DEVICE_ID))
         self._scope = scope
         self._quadrant = quadrant
-        self._unique_id = scoped_id(scope, "hungaromet_regional_radar")
 
     @property
     def name(self):
@@ -62,9 +66,7 @@ class HungarometRegionalRadarImage(RadarImage):
 
     @property
     def device_info(self):
-        return device_info(
-            self._scope, self._device_id, "regional_radar", "Regional radar image"
-        )
+        return device_info(self._scope, DEVICE_ID, "regional_radar", "Regional radar image")
 
     @property
     def extra_state_attributes(self):

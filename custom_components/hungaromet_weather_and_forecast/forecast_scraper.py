@@ -112,8 +112,11 @@ class Settlement:
 
 
 @dataclass
-class ForecastPeriod:
-    """The weather of one met.hu row, one interpolated hour or one day."""
+class ForecastPeriod:  # pylint: disable=too-many-instance-attributes
+    """The weather of one met.hu row, one interpolated hour or one day.
+
+    One field for each forecast value, as stored and shown by the entities.
+    """
 
     forecast_time: datetime | None = None
     temperature: float | None = None

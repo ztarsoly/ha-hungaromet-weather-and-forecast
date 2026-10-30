@@ -1,3 +1,6 @@
+"""HungaroMet Weather & Forecast: weather station sensors, a settlement forecast
+and radar images from HungaroMet."""
+
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
@@ -40,7 +43,8 @@ def _async_ensure_radar_entry(hass: HomeAssistant) -> None:
     )
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+async def async_setup(hass: HomeAssistant, _config: ConfigType) -> bool:
+    """Register the update service and delete radar files older versions saved."""
     async_register_update_service(hass)
     # The radar animations are kept in memory; delete the ones saved before
     await hass.async_add_executor_job(
@@ -98,6 +102,7 @@ async def _async_scope_registry(hass: HomeAssistant, entry: ConfigEntry) -> None
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up the national radar entry, or a location entry and its forecast."""
     if is_radar_entry(entry):
         await hass.config_entries.async_forward_entry_setups(entry, RADAR_PLATFORMS)
         return True
@@ -117,6 +122,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload an entry's platforms and forget its forecast."""
     unloaded = await hass.config_entries.async_unload_platforms(
         entry, _platforms(entry)
     )

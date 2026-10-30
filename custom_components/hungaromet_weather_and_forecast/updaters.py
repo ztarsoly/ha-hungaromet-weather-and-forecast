@@ -46,7 +46,7 @@ async def async_update_all(hass: HomeAssistant) -> None:
 def async_register_update_service(hass: HomeAssistant) -> None:
     """Register the update service once for the integration."""
 
-    async def handle_update(call: ServiceCall) -> None:
+    async def handle_update(_call: ServiceCall) -> None:
         await async_update_all(hass)
 
     hass.services.async_register(DOMAIN, SERVICE_UPDATE, handle_update)

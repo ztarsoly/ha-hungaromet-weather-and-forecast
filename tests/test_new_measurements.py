@@ -8,7 +8,7 @@ import pytest
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.util import dt as dt_util
 
-from custom_components.hungaromet_weather_and_forecast.daily_sensor import HungarometWeatherDailySensor
+from custom_components.hungaromet_weather_and_forecast.station_sensor import FEEDS, Measurement, StationQuery, StationSensor
 from custom_components.hungaromet_weather_and_forecast.weather_data import (
     WIND_DIRECTIONS,
     calculate_mean_values,
@@ -161,7 +161,9 @@ def test_ten_minute_feed_keeps_gust_columns_in_raw_data(mock_fetch):
 
 
 def test_prevailing_direction_sensor_is_a_translated_enum():
-    sensor = HungarometWeatherDailySensor(SimpleNamespace(), "U", "ssw", None, "fud")
+    sensor = StationSensor(
+        SimpleNamespace(), FEEDS["daily"], Measurement("U", "fud"), "ssw", StationQuery()
+    )
 
     assert sensor.device_class == SensorDeviceClass.ENUM
     assert sensor.options == list(WIND_DIRECTIONS.values())
@@ -170,6 +172,8 @@ def test_prevailing_direction_sensor_is_a_translated_enum():
 
 
 def test_other_daily_sensors_are_not_enums():
-    sensor = HungarometWeatherDailySensor(SimpleNamespace(), "P", 1014.0, "hPa", "p0")
+    sensor = StationSensor(
+        SimpleNamespace(), FEEDS["daily"], Measurement("P", "p0", "hPa"), 1014.0, StationQuery()
+    )
 
     assert sensor.device_class == SensorDeviceClass.ATMOSPHERIC_PRESSURE

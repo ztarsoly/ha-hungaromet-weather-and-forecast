@@ -1,3 +1,5 @@
+"""Downloading HungaroMet's observation feeds and averaging the nearby stations."""
+
 import io
 import json
 import logging
@@ -79,6 +81,7 @@ def _get_reference_coords(hass, location=None):
 
 
 def fetch_data(url: str) -> pd.DataFrame:
+    """Download a zipped feed and read its CSV file."""
     response = requests.get(url, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     with zipfile.ZipFile(io.BytesIO(response.content)) as z:
@@ -89,6 +92,7 @@ def fetch_data(url: str) -> pd.DataFrame:
 
 
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Turn the feed's "no data" values into NA and trim column and station names."""
     # Numbers and text columns (wind direction, gust time) both use -999 for no data
     df.replace([-999, "-999"], pd.NA, inplace=True)
     df.columns = df.columns.str.strip()
@@ -100,6 +104,7 @@ def clean_data(df: pd.DataFrame) -> pd.DataFrame:
 def add_distance_column(
     df: pd.DataFrame, ref_lat: float, ref_lon: float
 ) -> pd.DataFrame:
+    """Add each station's distance from the reference point, in kilometres."""
     df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
     df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
     df["Distance_km"] = df.apply(
@@ -155,6 +160,7 @@ def circular_mean(degrees) -> float:
 
 
 def calculate_mean_values(df: pd.DataFrame, numeric_columns: list) -> dict:
+    """Average each column over the selected stations; None when no station has it."""
     means = {}
     for col in numeric_columns:
         if col not in df.columns:
@@ -211,9 +217,9 @@ def ten_minute_gust_time(df: pd.DataFrame):
     return dt_util.as_local(gust).strftime("%H:%M:%S")
 
 
-# Haversine function to calculate distance
 def haversine(lat1, lon1, lat2, lon2):
-    R = 6371
+    """Return the great-circle distance of two points in kilometres."""
+    earth_radius_km = 6371
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
@@ -223,10 +229,11 @@ def haversine(lat1, lon1, lat2, lon2):
         + math.cos(phi1) * math.cos(phi2) * math.sin(dlambda / 2) ** 2
     )
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
-    return R * c
+    return earth_radius_km * c
 
 
 def process_daily_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, location=None):
+    """Return the daily feed's averages over the nearby stations, and the stations."""
     df = fetch_data(URL_DAILY)
     df = clean_data(df)
     columns = [
@@ -319,6 +326,7 @@ def process_daily_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, location=None
 
 
 def process_hourly_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, location=None):
+    """Return the hourly feed's averages over the nearby stations, and the stations."""
     df = fetch_data(URL_HOURLY)
     df = clean_data(df)
     columns = [
@@ -416,6 +424,7 @@ def process_hourly_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, location=Non
 
 
 def process_ten_minutes_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, location=None):
+    """Return the 10-minute feed's averages over the nearby stations, and the stations."""
     df = fetch_data(URL_TEN_MINUTES)
     df = clean_data(df)
     columns = [

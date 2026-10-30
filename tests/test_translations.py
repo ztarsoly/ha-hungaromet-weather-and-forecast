@@ -8,11 +8,12 @@ import pandas as pd
 import pytest
 from PIL import Image
 
-from custom_components.hungaromet_weather_and_forecast.daily_sensor import HungarometWeatherDailySensor
-from custom_components.hungaromet_weather_and_forecast.hourly_sensor import HungarometWeatherHourlySensor
-from custom_components.hungaromet_weather_and_forecast.station_info_sensor import HungarometStationInfoSensor
-from custom_components.hungaromet_weather_and_forecast.ten_minute_sensor import (
-    HungarometWeatherTenMinutesSensor,
+from custom_components.hungaromet_weather_and_forecast.station_sensor import (
+    FEEDS,
+    Measurement,
+    StationQuery,
+    StationSensor,
+    StationsSensor,
 )
 from custom_components.hungaromet_weather_and_forecast.weather_data import (
     process_daily_data,
@@ -64,14 +65,14 @@ def test_languages_have_the_same_keys():
 
 @pytest.mark.parametrize("language", LANGUAGES)
 @pytest.mark.parametrize(
-    ("process", "sensor_cls"),
+    ("process", "feed"),
     [
-        (process_daily_data, HungarometWeatherDailySensor),
-        (process_hourly_data, HungarometWeatherHourlySensor),
-        (process_ten_minutes_data, HungarometWeatherTenMinutesSensor),
+        (process_daily_data, "daily"),
+        (process_hourly_data, "hourly"),
+        (process_ten_minutes_data, "ten_minutes"),
     ],
 )
-def test_every_sensor_key_is_translated(language, process, sensor_cls):
+def test_every_sensor_key_is_translated(language, process, feed):
     """Each value a feed can produce has a translated sensor name."""
     df = _all_stations_df()
     if process is process_daily_data:
@@ -87,7 +88,7 @@ def test_every_sensor_key_is_translated(language, process, sensor_cls):
     names = _load(language)["entity"]["sensor"]
     device = _load(language)["device"]
     for key in data:
-        sensor = sensor_cls(hass, key, None, None, key)
+        sensor = StationSensor(hass, FEEDS[feed], Measurement(key, key), None, StationQuery())
         assert sensor.translation_key in names, sensor.translation_key
         assert sensor.device_info["translation_key"] in device
 
@@ -95,7 +96,7 @@ def test_every_sensor_key_is_translated(language, process, sensor_cls):
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_station_info_sensor_is_translated(language):
     """The station list sensor and its device are translated."""
-    sensor = HungarometStationInfoSensor(Mock(), "Stations", [], "daily")
+    sensor = StationsSensor(Mock(), FEEDS["daily"], [], StationQuery())
     translations = _load(language)
 
     assert sensor.translation_key in translations["entity"]["sensor"]

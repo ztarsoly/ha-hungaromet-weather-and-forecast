@@ -9,13 +9,11 @@ from homeassistant.core import callback
 
 from .const import (
     CONF_DISTANCE_KM,
-    CONF_ENTRY_TYPE,
     CONF_FORECAST,
     CONF_FORECAST_SETTLEMENT,
     CONF_LOCATION,
     DEFAULT_DISTANCE_KM,
     DOMAIN,
-    ENTRY_TYPE_RADAR,
     LOCATION_HOME,
     RADAR_ENTRY_TITLE,
     RADAR_ENTRY_UNIQUE_ID,
@@ -55,11 +53,11 @@ class HungarometConfigFlow(ConfigFlow, domain=DOMAIN):
         """Create the national radar entry; location entries start this."""
         await self.async_set_unique_id(RADAR_ENTRY_UNIQUE_ID)
         self._abort_if_unique_id_configured()
-        return self.async_create_entry(
-            title=RADAR_ENTRY_TITLE, data={CONF_ENTRY_TYPE: ENTRY_TYPE_RADAR}
-        )
+        # The integration's setup passes the radar entry's data
+        return self.async_create_entry(title=RADAR_ENTRY_TITLE, data=import_data)
 
     async def async_step_user(self, user_input=None):
+        """Show the setup form, and create a location entry from it."""
         errors = {}
         user_input = user_input or {}
         if user_input:

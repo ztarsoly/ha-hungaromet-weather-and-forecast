@@ -8,7 +8,6 @@ import pandas as pd
 import pytest
 
 from custom_components.hungaromet_weather_and_forecast import scheduler
-from custom_components.hungaromet_weather_and_forecast.daily_sensor import HungarometWeatherDailySensor
 from custom_components.hungaromet_weather_and_forecast.national_radar import HungarometRadarImage
 from custom_components.hungaromet_weather_and_forecast.radar import _frame_is_fresh, frame_time
 from custom_components.hungaromet_weather_and_forecast.scheduler import RetryingSchedule
@@ -17,6 +16,7 @@ from custom_components.hungaromet_weather_and_forecast.sensor import (
     _async_start_feed_schedules,
     _is_fresh,
 )
+from custom_components.hungaromet_weather_and_forecast.station_sensor import FEEDS, Measurement, StationQuery, StationSensor
 from custom_components.hungaromet_weather_and_forecast.weather_data import latest_observations
 
 RUN = datetime(2026, 10, 27, 8, 20, 59, tzinfo=UTC)
@@ -157,13 +157,13 @@ async def test_feed_schedule_jobs_report_freshness(monkeypatch):
     hass = SimpleNamespace(
         async_add_executor_job=AsyncMock(return_value=({"time": "2026-10-25"}, []))
     )
-    daily = HungarometWeatherDailySensor(hass, "D", 1.0, "°C", "t")
+    daily = StationSensor(
+        hass, FEEDS["daily"], Measurement("D", "t", "°C"), 1.0, StationQuery()
+    )
     daily.async_write_ha_state = MagicMock()
 
-    stops = _async_start_feed_schedules(hass, [daily], 20)
+    stops = _async_start_feed_schedules(hass, [daily], StationQuery())
     assert len(stops) == 3
-    # Without a config entry there is no polling option to follow
-    assert all(s.__self__._config_entry is None for s in stops)
     daily_run, hourly_run = clock.tracked[0][0], clock.tracked[1][0]
 
     # Nothing added yet: no download and no retry

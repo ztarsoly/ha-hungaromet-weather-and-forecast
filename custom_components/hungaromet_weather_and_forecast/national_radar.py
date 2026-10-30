@@ -18,6 +18,7 @@ NATIONAL_RADAR_NAMES = {"en": "National radar image", "hu": "Országos radarkép
 
 
 def get_latest_image_urls(base_url, count=FRAME_COUNT):
+    """Return the URLs of the newest PNG frames listed at base_url, oldest first."""
     response = requests.get(base_url, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, "html.parser")
@@ -43,11 +44,17 @@ def get_latest_image_urls(base_url, count=FRAME_COUNT):
     return [base_url + fname for fname in latest_files]
 
 
+DEVICE_ID = "hungaromet_radar_gif"
+
+
 class HungarometRadarImage(RadarImage):
     """The national radar image."""
 
-    def __init__(self, hass, name="HungaroMet Radar"):
-        super().__init__(hass, name, "hungaromet_radar_gif")
+    _label = "HungaroMet Radar"
+
+    def __init__(self, hass):
+        # Made from the device and an old name, so it must not change
+        super().__init__(hass, f"{DEVICE_ID}_hungaromet_radar")
 
     @property
     def name(self):
@@ -56,7 +63,7 @@ class HungarometRadarImage(RadarImage):
     @property
     def device_info(self):
         return {
-            "identifiers": {(DOMAIN, self._device_id)},
+            "identifiers": {(DOMAIN, DEVICE_ID)},
             "translation_key": "radar",
             "manufacturer": "HungaroMet",
             "model": "National radar image",

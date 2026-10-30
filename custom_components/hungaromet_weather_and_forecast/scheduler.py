@@ -3,6 +3,7 @@
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
+from functools import partial
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -38,27 +39,26 @@ class RetryingSchedule:
         self._job = job
         self._retry_delay = retry_delay
         self._utc_pattern = utc_pattern
-        self._scheduled_for: datetime | None = None
-        self._unsub_schedule: Callable[[], None] | None = None
         self._unsub_retry: Callable[[], None] | None = None
 
     def start(self) -> Callable[[], None]:
-        """Start the schedule and return a function that stops it."""
-        self._unsub_schedule = async_track_utc_time_change(
+        """Start the schedule and return a function that stops it and any retry."""
+        unsub_schedule = async_track_utc_time_change(
             self._hass, self._async_timed_run, **self._utc_pattern
         )
-        return self.stop
+
+        def stop() -> None:
+            nonlocal unsub_schedule
+            self._cancel_retry()
+            if unsub_schedule is not None:
+                unsub_schedule()
+                unsub_schedule = None
+
+        return stop
 
     async def async_run_now(self) -> None:
         """Run the job immediately, retrying it like a scheduled run."""
         await self._async_scheduled_run(dt_util.utcnow())
-
-    def stop(self) -> None:
-        """Stop the schedule and any pending retry."""
-        self._cancel_retry()
-        if self._unsub_schedule is not None:
-            self._unsub_schedule()
-            self._unsub_schedule = None
 
     def _cancel_retry(self) -> None:
         if self._unsub_retry is not None:
@@ -74,12 +74,14 @@ class RetryingSchedule:
 
     async def _async_scheduled_run(self, now: datetime) -> None:
         self._cancel_retry()
-        self._scheduled_for = now
-        await self._async_attempt()
+        await self._async_attempt(now)
 
-    async def _async_attempt(self, _now: datetime | None = None) -> None:
+    async def _async_attempt(
+        self, scheduled_for: datetime, _now: datetime | None = None
+    ) -> None:
+        """Run the job for the run scheduled at `scheduled_for`; retry if it fails."""
         self._unsub_retry = None
-        if await self._job(self._scheduled_for):
+        if await self._job(scheduled_for):
             return
         _LOGGER.debug(
             "HungaroMet %s data not fresh yet; retrying in %s",
@@ -87,5 +89,5 @@ class RetryingSchedule:
             self._retry_delay,
         )
         self._unsub_retry = async_call_later(
-            self._hass, self._retry_delay, self._async_attempt
+            self._hass, self._retry_delay, partial(self._async_attempt, scheduled_for)
         )

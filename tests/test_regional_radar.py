@@ -42,7 +42,7 @@ def test_radar_starts_without_an_animation():
 
 def test_radar_base_needs_a_frame_listing():
     hass = SimpleNamespace(data={}, bus=MagicMock())
-    base = radar.RadarImage(hass, "Base", "base_device")
+    base = radar.RadarImage(hass, "base_device_base")
     assert base.unique_id == "base_device_base"
     with pytest.raises(NotImplementedError):
         base._rebuild_gif()
@@ -152,7 +152,12 @@ async def test_incomplete_animation_is_shown_but_retried():
     entity = _regional()
     entity._added = True
     entity.async_write_ha_state = MagicMock()
-    entity.hass.async_add_executor_job = AsyncMock(return_value=(None, b"partial"))
+
+    async def rebuild(_):
+        entity._frames._gif = b"partial"
+        return None, b"partial"
+
+    entity.hass.async_add_executor_job = AsyncMock(side_effect=rebuild)
 
     assert await entity.async_update_data() is None
 
@@ -165,7 +170,7 @@ async def test_incomplete_animation_is_shown_but_retried():
 async def test_failed_rebuild_keeps_the_last_animation():
     entity = _regional()
     entity._added = True
-    entity._gif = b"old"
+    entity._frames._gif = b"old"
     entity.async_write_ha_state = MagicMock()
     entity.hass.async_add_executor_job = AsyncMock(return_value=(None, None))
 

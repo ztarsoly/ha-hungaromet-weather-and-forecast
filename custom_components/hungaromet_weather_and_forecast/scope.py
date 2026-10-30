@@ -24,6 +24,7 @@ class EntryScope:
 
     @classmethod
     def from_entry(cls, entry) -> "EntryScope":
+        """Return the scope of a config entry."""
         return cls(entry.entry_id, entry.title)
 
 

@@ -14,6 +14,7 @@ from io import BytesIO
 
 import requests
 from homeassistant.components.image import ImageEntity
+from homeassistant.util import dt as dt_util
 from PIL import Image
 
 from .scheduler import RetryingSchedule
@@ -84,14 +85,21 @@ class RadarFrames:
 
     def __init__(self) -> None:
         self._images: dict[str, Image.Image] = {}
+        self._gif: bytes | None = None
         # Scheduled rebuilds and the update service run in executor threads
         self._lock = threading.Lock()
+
+    @property
+    def gif(self) -> bytes | None:
+        """Return the last animation built, kept in memory only."""
+        return self._gif
 
     def update(self, urls: list[str]) -> tuple[str | None, bytes | None]:
         """Bring the frames up to the listed newest ones (oldest first).
 
         Return the newest frame's URL (None unless every listed frame is here)
-        and the animation's bytes (None when there is no frame at all).
+        and the new animation's bytes (None when there is no frame at all; the
+        last animation is kept then).
         """
         with self._lock:
             for url in urls:
@@ -103,6 +111,8 @@ class RadarFrames:
                 _LOGGER.error("No radar frames downloaded. GIF not updated.")
                 return None, None
             gif = create_gif(list(self._images.values()))
+            if gif is not None:
+                self._gif = gif
             # A frame that failed to download means the newest image may be missing;
             # it is downloaded again at the next try
             complete = len(self._images) == len(urls)
@@ -130,7 +140,7 @@ def create_gif(images, duration=FRAME_DURATION_MS, end_delay=END_DELAY_MS):
         )
         _LOGGER.debug("GIF built (frames: %s, end delay: %s ms)", len(images), end_delay)
         return gif.getvalue()
-    except Exception as err:  # pragma: no cover - defensive logging
+    except (OSError, ValueError) as err:  # pragma: no cover - defensive logging
         _LOGGER.error("Error creating GIF: %s", err)
         return None
 
@@ -168,47 +178,29 @@ class RadarImage(ImageEntity):
     _attr_should_poll = False
     # Named on its own, without its device's name in front
     _attr_has_entity_name = False
+    # Names the image in log messages
+    _label = "Radar"
 
-    def __init__(self, hass, name: str, device_id: str):
+    def __init__(self, hass, unique_id: str):
         super().__init__(hass)
         self.hass = hass
-        # Only used for log messages and the unique ID, which must not change
-        self._name = name
-        self._device_id = device_id
-        normalized_name = self._name.lower().replace(" ", "_")
-        self._unique_id = f"{self._device_id}_{normalized_name}"
+        self._attr_unique_id = unique_id
         self._added = False
         # The animation is kept in memory only; it is built when the entity is
         # added, and the entity is unavailable until then
-        self._gif: bytes | None = None
         self._frames = RadarFrames()
-        self._last_updated = None
         self._update_counter = 0
-        self._unsub_update = None
-        self._unsub_updater = None
-
-    @property
-    def unique_id(self):
-        return self._unique_id
+        # What stops the schedule and the update service's rebuilds
+        self._unsubscribe: list = []
 
     @property
     def available(self) -> bool:
         """Return True once an animation has been built."""
-        return self._gif is not None
-
-    @property
-    def state(self) -> str:
-        """Return the last updated time in ISO format, or 'unknown'."""
-        return self._last_updated or "unknown"
+        return self._frames.gif is not None
 
     async def async_added_to_hass(self):
         self._added = True
-        _LOGGER.debug(
-            "Image entity %s added to hass with unique_id %s",
-            self._name,
-            self._unique_id,
-        )
-        if self._unsub_update is None:
+        if not self._unsubscribe:
             schedule = RetryingSchedule(
                 self.hass,
                 "radar",
@@ -217,31 +209,26 @@ class RadarImage(ImageEntity):
                 config_entry=self.platform.config_entry if self.platform else None,
                 **RADAR_SCHEDULE,
             )
-            self._unsub_update = schedule.start()
+            self._unsubscribe.append(schedule.start())
             # Build the GIF now instead of waiting up to 5 minutes for the first
             # scheduled run; in the background, so adding the entity is not delayed
             self.hass.async_create_task(
-                schedule.async_run_now(), f"{self.entity_id or self._name} first update"
+                schedule.async_run_now(), f"{self.entity_id or self._label} first update"
             )
-        # The update service rebuilds this image along with everything else
-        self._unsub_updater = async_register_updater(
-            self.hass, self._unique_id, self.async_update_data
-        )
+            # The update service rebuilds this image along with everything else
+            self._unsubscribe.append(
+                async_register_updater(self.hass, self.unique_id, self.async_update_data)
+            )
 
     async def async_will_remove_from_hass(self):
         self._added = False
-        if self._unsub_update:
-            self._unsub_update()
-            self._unsub_update = None
-        if self._unsub_updater:
-            self._unsub_updater()
-            self._unsub_updater = None
+        while self._unsubscribe:
+            self._unsubscribe.pop()()
 
     async def _async_scheduled_update(self, scheduled_for):
         """Rebuild the GIF; True once it holds the frame due at this run."""
         if not self._added:
             return True
-        _LOGGER.debug("HungaroMetRadarImage: scheduled update triggered")
         frame_url = await self.async_update_data()
         return _frame_is_fresh(frame_url, scheduled_for)
 
@@ -258,10 +245,10 @@ class RadarImage(ImageEntity):
         try:
             urls = self._list_frames()
         except requests.RequestException as err:
-            _LOGGER.error("Network error listing %s frames: %s", self._name, err)
+            _LOGGER.error("Network error listing %s frames: %s", self._label, err)
             return None, None
         if not urls:
-            _LOGGER.error("No %s frames listed. GIF not updated.", self._name)
+            _LOGGER.error("No %s frames listed. GIF not updated.", self._label)
             return None, None
         return self._frames.update(urls)
 
@@ -269,30 +256,31 @@ class RadarImage(ImageEntity):
         """Rebuild the GIF and return its newest frame's URL, or None."""
         if not self._added:
             return None
-        _LOGGER.debug("HungaroMetRadarImage: async_update_data called")
         frame_url, gif = await self.hass.async_add_executor_job(self._rebuild_gif)
         if gif is not None:
-            # Kept even with a frame missing, like the saved file was before
-            self._gif = gif
+            # Shown even with a frame missing; the state only changes once the
+            # newest frame is in, which also tells the frontend to reload it
             if frame_url is not None:
-                self._last_updated = datetime.now().isoformat()
+                self._attr_image_last_updated = dt_util.utcnow()
                 self._update_counter += 1
             self.async_write_ha_state()
         return frame_url
 
     async def async_update(self):
+        """Rebuild the GIF (Home Assistant's update_entity)."""
         await self.async_update_data()
 
     async def async_image(self):
-        return self._gif
+        return self._frames.gif
 
     def image(self):
         """Return the most recent radar image bytes."""
-        return self._gif
+        return self._frames.gif
 
     @property
     def extra_state_attributes(self):
+        updated = self.image_last_updated
         return {
-            "last_updated": self._last_updated,
+            "last_updated": updated.isoformat() if updated else None,
             "update_counter": self._update_counter,
         }

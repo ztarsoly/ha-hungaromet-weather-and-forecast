@@ -1,20 +1,13 @@
 """Tests for setting up an entry's weather station and forecast sensors."""
 
-from collections import Counter, defaultdict
+from collections import Counter
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from custom_components.hungaromet_weather_and_forecast import sensor
-from custom_components.hungaromet_weather_and_forecast.daily_sensor import HungarometWeatherDailySensor
-from custom_components.hungaromet_weather_and_forecast.hourly_sensor import HungarometWeatherHourlySensor
-from custom_components.hungaromet_weather_and_forecast.station_info_sensor import (
-    HungarometStationInfoSensor,
-)
-from custom_components.hungaromet_weather_and_forecast.ten_minute_sensor import (
-    HungarometWeatherTenMinutesSensor,
-)
+from custom_components.hungaromet_weather_and_forecast.station_sensor import StationQuery, StationSensor, StationsSensor
 from custom_components.hungaromet_weather_and_forecast.weather_data import (
     process_daily_data,
     process_hourly_data,
@@ -22,6 +15,13 @@ from custom_components.hungaromet_weather_and_forecast.weather_data import (
 )
 
 STATIONS = [{"StationNumber": 1, "StationName": "Pécs"}]
+
+
+class FeedData(dict):
+    """A feed's values: 1.5 for every measurement that is not given."""
+
+    def get(self, key, default=None):
+        return super().get(key, 1.5)
 
 
 def _entry(data=None, options=None):
@@ -36,8 +36,8 @@ def _entry(data=None, options=None):
 
 def _hass(forecast=None):
     async def run(func, *args):
-        # Every feed reads 1.5 for each of its measurements
-        return defaultdict(lambda: 1.5, {"time": "2026-10-30T10:00:00+00:00"}), STATIONS
+        time = "2026-10-30" if func is process_daily_data else "2026-10-30T10:00:00+00:00"
+        return FeedData(time=time), STATIONS
 
     data = {"hungaromet_weather_and_forecast": {"e1": forecast}} if forecast else {}
     return SimpleNamespace(data=data, async_add_executor_job=AsyncMock(side_effect=run))
@@ -59,12 +59,16 @@ async def test_setup_adds_every_station_sensor():
     ((sensors, args),) = added
     # Updated once before they are added
     assert args == (True,)
-    assert Counter(type(s) for s in sensors) == {
-        HungarometWeatherDailySensor: 28,
-        HungarometWeatherHourlySensor: 29,
-        HungarometWeatherTenMinutesSensor: 25,
-        HungarometStationInfoSensor: 3,
+    assert Counter((type(s), s.feed.key) for s in sensors) == {
+        (StationSensor, "daily"): 28,
+        (StationSensor, "hourly"): 29,
+        (StationSensor, "ten_minutes"): 25,
+        (StationsSensor, "daily"): 1,
+        (StationsSensor, "hourly"): 1,
+        (StationsSensor, "ten_minutes"): 1,
     }
+    assert sensors[0].native_value.isoformat() == "2026-10-30"
+    assert sensors[1].native_value == 1.5
     assert len({s.unique_id for s in sensors}) == len(sensors)
     assert all(s.unique_id.startswith("e1_") for s in sensors)
     assert [c.args[0] for c in hass.async_add_executor_job.await_args_list] == [
@@ -90,7 +94,9 @@ async def test_setup_uses_the_entry_settings():
     # The options win over the setup data
     calls = hass.async_add_executor_job.await_args_list
     assert all(c.args[1:] == (hass, 35, (46.0, 18.2)) for c in calls)
-    assert {(s._distance_km, s._location) for s in sensors} == {(35, (46.0, 18.2))}
+    assert {s._query for s in sensors} == {
+        StationQuery(35, (46.0, 18.2), sensors[0]._query.scope)
+    }
 
 
 @pytest.mark.asyncio

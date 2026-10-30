@@ -1,3 +1,5 @@
+"""Constants of the HungaroMet Weather & Forecast integration."""
+
 DOMAIN = "hungaromet_weather_and_forecast"
 CONF_DISTANCE_KM = "distance_km"
 DEFAULT_DISTANCE_KM = 20
