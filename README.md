@@ -18,7 +18,7 @@ Ez az egyéni Home Assistant integráció a HungaroMet Magyar Meteorológiai Szo
 - Home Assistant 2024.12 vagy újabb
 - Internetkapcsolat az `odp.met.hu` és a `www.met.hu` eléréséhez
 
-A szükséges Python-csomagokat (pandas, requests, Pillow, beautifulsoup4) a Home Assistant telepíti.
+A szükséges Python-csomagokat (pandas, beautifulsoup4) a Home Assistant telepíti; a requests és a Pillow a Home Assistant része.
 
 ## Telepítés
 
