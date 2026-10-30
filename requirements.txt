@@ -1,5 +1,4 @@
 requests
 pandas
 Pillow
-matplotlib
 bs4
