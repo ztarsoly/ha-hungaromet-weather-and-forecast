@@ -20,6 +20,9 @@ RADAR_PLATFORMS = ["image"]
 # The national radar image is shared, so its device stays unscoped
 RADAR_DEVICE_ID = "hungaromet_radar_gif"
 
+# The name each loaded location entry was set up with, to spot a renamed entry
+ENTRY_NAMES = f"{DOMAIN}_names"
+
 
 def _platforms(entry: ConfigEntry) -> list[str]:
     return RADAR_PLATFORMS if is_radar_entry(entry) else PLATFORMS
@@ -116,6 +119,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Now that its entities are added; a failed download is retried, and
         # must not stop the weather station sensors from loading
         await forecast.schedule.async_run_now()
+    hass.data.setdefault(ENTRY_NAMES, {})[entry.entry_id] = entry.title
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     _async_ensure_radar_entry(hass)
     return True
@@ -137,5 +141,27 @@ async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Reload the entry so changed options take effect."""
+    """Reload the entry so changed options or a new name take effect."""
+    names = hass.data.setdefault(ENTRY_NAMES, {})
+    old_name = names.get(entry.entry_id)
+    if old_name and old_name != entry.title:
+        _async_rename_devices(hass, entry, old_name)
+    # Recorded now, as another change can call this before the reload is done
+    names[entry.entry_id] = entry.title
     await hass.config_entries.async_reload(entry.entry_id)
+
+
+@callback
+def _async_rename_devices(hass: HomeAssistant, entry: ConfigEntry, old_name: str) -> None:
+    """Put an entry's new name into the device names the user gave.
+
+    Devices with their default name ("{name} Daily Weather") get the new name
+    when the entry reloads. A name the user gave is changed only where it holds
+    the old entry name.
+    """
+    dev_reg = dr.async_get(hass)
+    for device in dr.async_entries_for_config_entry(dev_reg, entry.entry_id):
+        if device.name_by_user and old_name in device.name_by_user:
+            dev_reg.async_update_device(
+                device.id, name_by_user=device.name_by_user.replace(old_name, entry.title)
+            )

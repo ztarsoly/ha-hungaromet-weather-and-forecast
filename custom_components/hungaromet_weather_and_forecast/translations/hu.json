@@ -32,11 +32,13 @@
       "init": {
         "title": "HungaroMet Weather & Forecast beállítások",
         "data": {
+          "name": "Név",
           "distance_km": "Állomáskeresési sugár (km)",
           "forecast_settlement": "Előrejelzés települése (nem kötelező)",
           "location": "Időjárás-érzékelők helye"
         },
         "data_description": {
+          "name": "Átnevezi a bejegyzést és az eszközeit. Az Ön által átnevezett eszköz nevében csak a jelenlegi név cserélődik.",
           "distance_km": "A helytől ennyi távolságon belüli állomások átlagát számolja (1–100 km).",
           "forecast_settlement": "A HungaroMet Előrejelzés eszköz települése, pl. Debrecen. Ékezetekkel írja. Hagyja üresen, ha nem kér előrejelzést.",
           "location": "Honnan mérje az állomáskeresési sugarat: a Home Assistant otthoni helyétől vagy az előrejelzés településétől."
@@ -46,7 +48,8 @@
     "error": {
       "settlement_not_found": "A met.hu nem ismeri ezt a települést. Ellenőrizze az írásmódot, az ékezeteket is (é, á, ő …).",
       "cannot_connect": "A met.hu nem érhető el. Próbálja újra később.",
-      "settlement_required": "Adja meg az előrejelzés települését, hogy helyként használhassa."
+      "settlement_required": "Adja meg az előrejelzés települését, hogy helyként használhassa.",
+      "name_required": "Adjon meg egy nevet."
     }
   },
   "selector": {

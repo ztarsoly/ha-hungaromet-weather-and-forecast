@@ -1,5 +1,6 @@
 """Tests for __init__.py"""
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -10,6 +11,7 @@ from custom_components.hungaromet_weather_and_forecast import (
     async_unload_entry,
     _async_reload_entry,
 )
+import custom_components.hungaromet_weather_and_forecast as integration
 from custom_components.hungaromet_weather_and_forecast.radar import (
     remove_saved_gifs,
 )
@@ -88,6 +90,8 @@ async def test_async_setup_entry_reloads_on_options_change(forecast_setup):
     await async_setup_entry(hass, entry)
 
     entry.add_update_listener.assert_called_once_with(_async_reload_entry)
+    # The name it was set up with, to spot a renamed entry
+    assert hass.data["hungaromet_weather_and_forecast_names"] == {entry.entry_id: entry.title}
     entry.async_on_unload.assert_called_once_with(
         entry.add_update_listener.return_value
     )
@@ -124,7 +128,8 @@ async def test_failed_unload_keeps_the_forecast():
 async def test_reload_entry_reloads_by_id():
     """Test the update listener reloads the config entry."""
     hass = MagicMock()
-    entry = MagicMock(entry_id="abc")
+    hass.data = {}
+    entry = MagicMock(entry_id="abc", title="Home")
     hass.config_entries.async_reload = AsyncMock()
 
     await _async_reload_entry(hass, entry)
@@ -201,3 +206,48 @@ async def test_radar_entry_unloads_only_the_image():
     hass.config_entries.async_unload_platforms.assert_awaited_once_with(
         entry, ["image"]
     )
+
+
+def _device(device_id, name_by_user=None):
+    return SimpleNamespace(id=device_id, name_by_user=name_by_user)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("old_name", ["Home", None])
+async def test_renamed_entry_renames_the_devices_the_user_named(old_name):
+    hass = MagicMock()
+    hass.data = {"hungaromet_weather_and_forecast_names": {"abc": old_name}}
+    hass.config_entries.async_reload = AsyncMock()
+    entry = SimpleNamespace(entry_id="abc", title="Cottage")
+    devices = [
+        _device("default"),  # renamed by the reload, from the translations
+        _device("named", "Home kert hőmérő"),
+        _device("own", "Kert"),
+    ]
+    dev_reg = MagicMock()
+    with (
+        patch.object(integration.dr, "async_get", return_value=dev_reg),
+        patch.object(integration.dr, "async_entries_for_config_entry", return_value=devices),
+    ):
+        await _async_reload_entry(hass, entry)
+
+    if old_name:
+        dev_reg.async_update_device.assert_called_once_with(
+            "named", name_by_user="Cottage kert hőmérő"
+        )
+    else:
+        # Not set up since the integration started: nothing to compare with
+        dev_reg.async_update_device.assert_not_called()
+    assert hass.data["hungaromet_weather_and_forecast_names"] == {"abc": "Cottage"}
+    hass.config_entries.async_reload.assert_awaited_once_with("abc")
+
+
+@pytest.mark.asyncio
+async def test_unchanged_name_renames_nothing():
+    hass = MagicMock()
+    hass.data = {"hungaromet_weather_and_forecast_names": {"abc": "Home"}}
+    hass.config_entries.async_reload = AsyncMock()
+    with patch.object(integration.dr, "async_get") as get_registry:
+        await _async_reload_entry(hass, SimpleNamespace(entry_id="abc", title="Home"))
+
+    get_registry.assert_not_called()

@@ -2,6 +2,7 @@
 
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.const import CONF_NAME
 from homeassistant.helpers.selector import (
     SelectSelector,
     SelectSelectorConfig,
@@ -45,14 +46,18 @@ async def async_validate_forecast(hass, user_input: dict):
 
 
 class HungaroMetOptionsFlowHandler(config_entries.OptionsFlow):
-    """The Configure form: station search radius, forecast settlement and location."""
+    """The Configure form: name, station search radius, forecast settlement and location."""
 
     async def async_step_init(self, user_input=None):
         """Show the form with the current settings, and save the new ones."""
         errors = {}
         if user_input is not None:
+            name = user_input.get(CONF_NAME, self.config_entry.title).strip()
             settlement, errors = await async_validate_forecast(self.hass, user_input)
+            if not name:
+                errors[CONF_NAME] = "name_required"
             if not errors:
+                self._async_rename_entry(name)
                 return self.async_create_entry(
                     title="",
                     data={
@@ -65,6 +70,7 @@ class HungaroMetOptionsFlowHandler(config_entries.OptionsFlow):
         entry = self.config_entry
         current = stored_settlement(entry)
         defaults = user_input or {
+            CONF_NAME: entry.title,
             CONF_DISTANCE_KM: entry.options.get(
                 CONF_DISTANCE_KM, entry.data.get(CONF_DISTANCE_KM, DEFAULT_DISTANCE_KM)
             ),
@@ -76,6 +82,7 @@ class HungaroMetOptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema({
+                vol.Required(CONF_NAME, default=defaults.get(CONF_NAME, entry.title)): str,
                 vol.Optional(
                     CONF_DISTANCE_KM, default=defaults[CONF_DISTANCE_KM]
                 ): vol.All(vol.Coerce(float), vol.Range(min=1, max=100)),
@@ -89,3 +96,11 @@ class HungaroMetOptionsFlowHandler(config_entries.OptionsFlow):
             }),
             errors=errors,
         )
+
+    def _async_rename_entry(self, name: str) -> None:
+        """Give the entry a new name; its devices follow when it reloads."""
+        entry = self.config_entry
+        if name != entry.title:
+            self.hass.config_entries.async_update_entry(
+                entry, title=name, data={**entry.data, CONF_NAME: name}
+            )

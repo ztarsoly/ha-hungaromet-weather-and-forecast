@@ -32,11 +32,13 @@
       "init": {
         "title": "HungaroMet Weather & Forecast options",
         "data": {
+          "name": "Name",
           "distance_km": "Station search radius (km)",
           "forecast_settlement": "Forecast settlement (optional)",
           "location": "Weather sensor location"
         },
         "data_description": {
+          "name": "Renames the entry and its devices. A device name you changed is updated only where it contains the current name.",
           "distance_km": "Stations within this distance of the location are averaged (1–100 km).",
           "forecast_settlement": "Hungarian settlement for the HungaroMet Forecast device, e.g. Debrecen. Use accented letters. Leave empty for no forecast.",
           "location": "Where the station search radius is measured from: Home Assistant's home location, or the forecast settlement."
@@ -46,7 +48,8 @@
     "error": {
       "settlement_not_found": "met.hu does not know this settlement. Check the spelling, including accents (é, á, ő …).",
       "cannot_connect": "Could not reach met.hu. Try again later.",
-      "settlement_required": "Enter a forecast settlement to use it as the location."
+      "settlement_required": "Enter a forecast settlement to use it as the location.",
+      "name_required": "Enter a name."
     }
   },
   "selector": {

@@ -54,7 +54,7 @@ Az integráció a felhasználói felületen állítható be:
 | **Előrejelzés települése** | Nem kötelező. Egy magyarországi település (pl. `Debrecen`) az előrejelzéshez, ékezetekkel, helyesen írva; a nevet a met.hu-n keresi meg az integráció. Üresen hagyva nincs előrejelzés. |
 | **Időjárás-érzékelők helye** | Honnan mérje az állomáskeresési sugarat: a Home Assistant otthoni helyétől (**Otthon**) vagy az előrejelzés településétől (**Előrejelzés települése**) |
 
-A sugár, a település és a hely később is módosítható a bejegyzés **Konfigurálás** gombjával.
+A név, a sugár, a település és a hely később is módosítható a bejegyzés **Konfigurálás** gombjával. Új névnél a bejegyzés eszközei is az új nevet kapják; az Ön által átnevezett eszközök nevében csak a régi név cserélődik. Ugyanez történik, ha a bejegyzést a Home Assistant saját **Átnevezés** menüpontjával nevezi át.
 
 ### Több helyszín
 

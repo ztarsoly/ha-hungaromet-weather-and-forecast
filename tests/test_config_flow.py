@@ -132,6 +132,10 @@ def _configure(entry, validated):
     )
 
 
+def _entry(data=None, options=None, title="Pécs"):
+    return SimpleNamespace(title=title, data=data or {"distance_km": 20}, options=options or {})
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("data", "options", "expected"),
@@ -153,20 +157,25 @@ def _configure(entry, validated):
     ],
 )
 async def test_configure_form_shows_the_current_settings(data, options, expected):
-    entry = SimpleNamespace(data=data, options=options)
+    entry = SimpleNamespace(title="Pécs", data=data, options=options)
     handler, flow, current = _configure(entry, (None, {}))
     with flow as validate, current:
         form = await handler.async_step_init()
 
     validate.assert_not_awaited()
     assert form["step_id"] == "init"
-    assert _form_defaults(form) == expected
+    assert _form_defaults(form) == {"name": "Pécs", **expected}
 
 
 @pytest.mark.asyncio
 async def test_configure_form_saves_the_settings():
-    entry = SimpleNamespace(data={"distance_km": 20}, options={})
-    user_input = {"distance_km": 40.0, "forecast_settlement": "Pécs", "location": "settlement"}
+    entry = _entry()
+    user_input = {
+        "name": "Pécs",
+        "distance_km": 40.0,
+        "forecast_settlement": "Pécs",
+        "location": "settlement",
+    }
     handler, flow, current = _configure(entry, (PECS, {}))
     with flow, current:
         result = await handler.async_step_init(user_input)
@@ -176,14 +185,45 @@ async def test_configure_form_saves_the_settings():
         "title": "",
         "data": {"distance_km": 40.0, "forecast": PECS_DICT, "location": "settlement"},
     }
+    # The same name: the entry keeps it
+    handler.hass.config_entries.async_update_entry.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_configure_form_renames_the_entry():
+    entry = _entry({"name": "Pécs", "distance_km": 20})
+    user_input = {"name": " Mecsek ", "distance_km": 20, "location": "home"}
+    handler, flow, current = _configure(entry, (None, {}))
+    with flow, current:
+        result = await handler.async_step_init(user_input)
+
+    assert result["type"] == "create_entry"
+    handler.hass.config_entries.async_update_entry.assert_called_once_with(
+        entry, title="Mecsek", data={"name": "Mecsek", "distance_km": 20}
+    )
+
+
+@pytest.mark.asyncio
+async def test_configure_form_needs_a_name():
+    user_input = {"name": "  ", "distance_km": 20, "forecast_settlement": "", "location": "home"}
+    handler, flow, current = _configure(_entry(), (None, {}))
+    with flow, current:
+        form = await handler.async_step_init(user_input)
+
+    assert form["errors"] == {"name": "name_required"}
+    handler.hass.config_entries.async_update_entry.assert_not_called()
 
 
 @pytest.mark.asyncio
 async def test_configure_form_shows_errors_and_keeps_the_input():
-    entry = SimpleNamespace(data={"distance_km": 20}, options={})
-    user_input = {"distance_km": 40.0, "forecast_settlement": "", "location": "settlement"}
+    user_input = {
+        "name": "Pécs",
+        "distance_km": 40.0,
+        "forecast_settlement": "",
+        "location": "settlement",
+    }
     errors = {"location": "settlement_required"}
-    handler, flow, current = _configure(entry, (None, errors))
+    handler, flow, current = _configure(_entry(), (None, errors))
     with flow, current:
         form = await handler.async_step_init(user_input)
 
