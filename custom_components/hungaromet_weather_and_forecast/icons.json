@@ -1,0 +1,323 @@
+{
+  "entity": {
+    "sensor": {
+      "stations": {
+        "default": "mdi:map-marker-radius"
+      },
+      "daily_latitude": {
+        "default": "mdi:latitude"
+      },
+      "daily_longitude": {
+        "default": "mdi:longitude"
+      },
+      "daily_elevation": {
+        "default": "mdi:elevation-rise"
+      },
+      "daily_et5": {
+        "default": "mdi:thermometer-lines"
+      },
+      "daily_et10": {
+        "default": "mdi:thermometer-lines"
+      },
+      "daily_et20": {
+        "default": "mdi:thermometer-lines"
+      },
+      "daily_et50": {
+        "default": "mdi:thermometer-lines"
+      },
+      "daily_et100": {
+        "default": "mdi:thermometer-lines"
+      },
+      "daily_time": {
+        "default": "mdi:clock-outline"
+      },
+      "daily_upe": {
+        "default": "mdi:waves-arrow-up"
+      },
+      "daily_rau": {
+        "default": "mdi:weather-pouring"
+      },
+      "daily_water_balance": {
+        "default": "mdi:scale-balance"
+      },
+      "daily_t": {
+        "default": "mdi:thermometer"
+      },
+      "daily_tn": {
+        "default": "mdi:thermometer-low"
+      },
+      "daily_tx": {
+        "default": "mdi:thermometer-high"
+      },
+      "daily_sr": {
+        "default": "mdi:weather-sunny"
+      },
+      "daily_sr_mj": {
+        "default": "mdi:weather-sunny"
+      },
+      "daily_tsn24": {
+        "default": "mdi:snowflake-thermometer"
+      },
+      "daily_v": {
+        "default": "mdi:eye-outline"
+      },
+      "daily_p": {
+        "default": "mdi:gauge"
+      },
+      "daily_p0": {
+        "default": "mdi:gauge"
+      },
+      "daily_u": {
+        "default": "mdi:water-percent"
+      },
+      "daily_sg": {
+        "default": "mdi:radioactive"
+      },
+      "daily_suv": {
+        "default": "mdi:sun-wireless"
+      },
+      "daily_fs": {
+        "default": "mdi:weather-windy"
+      },
+      "daily_f": {
+        "default": "mdi:weather-windy"
+      },
+      "daily_fx": {
+        "default": "mdi:weather-windy-variant"
+      },
+      "daily_fxd": {
+        "default": "mdi:compass-outline"
+      },
+      "daily_fxdat": {
+        "default": "mdi:clock-alert-outline"
+      },
+      "daily_fud": {
+        "default": "mdi:compass-rose"
+      },
+      "daily_tviz": {
+        "default": "mdi:thermometer-water"
+      },
+      "hourly_latitude": {
+        "default": "mdi:latitude"
+      },
+      "hourly_longitude": {
+        "default": "mdi:longitude"
+      },
+      "hourly_elevation": {
+        "default": "mdi:elevation-rise"
+      },
+      "hourly_et5": {
+        "default": "mdi:thermometer-lines"
+      },
+      "hourly_et10": {
+        "default": "mdi:thermometer-lines"
+      },
+      "hourly_et20": {
+        "default": "mdi:thermometer-lines"
+      },
+      "hourly_et50": {
+        "default": "mdi:thermometer-lines"
+      },
+      "hourly_et100": {
+        "default": "mdi:thermometer-lines"
+      },
+      "hourly_time": {
+        "default": "mdi:clock-outline"
+      },
+      "hourly_r": {
+        "default": "mdi:weather-pouring"
+      },
+      "hourly_t": {
+        "default": "mdi:thermometer"
+      },
+      "hourly_ta": {
+        "default": "mdi:thermometer"
+      },
+      "hourly_tn": {
+        "default": "mdi:thermometer-low"
+      },
+      "hourly_tx": {
+        "default": "mdi:thermometer-high"
+      },
+      "hourly_u": {
+        "default": "mdi:water-percent"
+      },
+      "hourly_sg": {
+        "default": "mdi:radioactive"
+      },
+      "hourly_sr": {
+        "default": "mdi:weather-sunny"
+      },
+      "hourly_sr_mj": {
+        "default": "mdi:weather-sunny"
+      },
+      "hourly_suv": {
+        "default": "mdi:sun-wireless"
+      },
+      "hourly_fx": {
+        "default": "mdi:weather-windy-variant"
+      },
+      "hourly_fxd": {
+        "default": "mdi:compass-outline"
+      },
+      "hourly_tsn": {
+        "default": "mdi:snowflake-thermometer"
+      },
+      "hourly_tviz": {
+        "default": "mdi:thermometer-water"
+      },
+      "hourly_fs": {
+        "default": "mdi:weather-windy"
+      },
+      "hourly_fsd": {
+        "default": "mdi:compass-outline"
+      },
+      "hourly_f": {
+        "default": "mdi:weather-windy"
+      },
+      "hourly_fd": {
+        "default": "mdi:compass-outline"
+      },
+      "hourly_we": {
+        "default": "mdi:weather-partly-cloudy"
+      },
+      "hourly_v": {
+        "default": "mdi:eye-outline"
+      },
+      "hourly_p": {
+        "default": "mdi:gauge"
+      },
+      "hourly_p0": {
+        "default": "mdi:gauge"
+      },
+      "hourly_fxdat": {
+        "default": "mdi:clock-alert-outline"
+      },
+      "ten_minutes_latitude": {
+        "default": "mdi:latitude"
+      },
+      "ten_minutes_longitude": {
+        "default": "mdi:longitude"
+      },
+      "ten_minutes_elevation": {
+        "default": "mdi:elevation-rise"
+      },
+      "ten_minutes_et5": {
+        "default": "mdi:thermometer-lines"
+      },
+      "ten_minutes_et10": {
+        "default": "mdi:thermometer-lines"
+      },
+      "ten_minutes_et20": {
+        "default": "mdi:thermometer-lines"
+      },
+      "ten_minutes_et50": {
+        "default": "mdi:thermometer-lines"
+      },
+      "ten_minutes_et100": {
+        "default": "mdi:thermometer-lines"
+      },
+      "ten_minutes_time": {
+        "default": "mdi:clock-outline"
+      },
+      "ten_minutes_r": {
+        "default": "mdi:weather-pouring"
+      },
+      "ten_minutes_t": {
+        "default": "mdi:thermometer"
+      },
+      "ten_minutes_ta": {
+        "default": "mdi:thermometer"
+      },
+      "ten_minutes_tn": {
+        "default": "mdi:thermometer-low"
+      },
+      "ten_minutes_tx": {
+        "default": "mdi:thermometer-high"
+      },
+      "ten_minutes_u": {
+        "default": "mdi:water-percent"
+      },
+      "ten_minutes_sg": {
+        "default": "mdi:radioactive"
+      },
+      "ten_minutes_sr": {
+        "default": "mdi:weather-sunny"
+      },
+      "ten_minutes_sr_mj": {
+        "default": "mdi:weather-sunny"
+      },
+      "ten_minutes_suv": {
+        "default": "mdi:sun-wireless"
+      },
+      "ten_minutes_fx": {
+        "default": "mdi:weather-windy-variant"
+      },
+      "ten_minutes_fxd": {
+        "default": "mdi:compass-outline"
+      },
+      "ten_minutes_tsn": {
+        "default": "mdi:snowflake-thermometer"
+      },
+      "ten_minutes_tviz": {
+        "default": "mdi:thermometer-water"
+      },
+      "ten_minutes_fs": {
+        "default": "mdi:weather-windy"
+      },
+      "ten_minutes_fsd": {
+        "default": "mdi:compass-outline"
+      },
+      "ten_minutes_v": {
+        "default": "mdi:eye-outline"
+      },
+      "ten_minutes_p": {
+        "default": "mdi:gauge"
+      },
+      "ten_minutes_fxdat": {
+        "default": "mdi:clock-alert-outline"
+      },
+      "forecast_temperature": {
+        "default": "mdi:thermometer"
+      },
+      "forecast_temperature_min": {
+        "default": "mdi:thermometer-chevron-down"
+      },
+      "forecast_temperature_max": {
+        "default": "mdi:thermometer-chevron-up"
+      },
+      "forecast_precipitation": {
+        "default": "mdi:weather-pouring"
+      },
+      "forecast_cloud_cover": {
+        "default": "mdi:weather-cloudy"
+      },
+      "forecast_wind_speed": {
+        "default": "mdi:weather-windy"
+      },
+      "forecast_wind_gust": {
+        "default": "mdi:weather-windy-variant"
+      },
+      "forecast_wind_bearing": {
+        "default": "mdi:compass-outline"
+      },
+      "forecast_wind_direction": {
+        "default": "mdi:compass-rose"
+      },
+      "forecast_pressure": {
+        "default": "mdi:gauge"
+      },
+      "forecast_weather_condition": {
+        "default": "mdi:weather-partly-cloudy"
+      },
+      "forecast_issued": {
+        "default": "mdi:clock-outline"
+      }
+    }
+  },
+  "services": {
+    "update": {
+      "service": "mdi:refresh"
+    }
+  }
+}

@@ -1,0 +1,454 @@
+{
+  "title": "HungaroMet Weather & Forecast",
+  "config": {
+    "step": {
+      "user": {
+        "title": "HungaroMet Weather & Forecast beállítása",
+        "description": "Az érzékelők a kiválasztott helytől számított keresési sugáron belüli összes HungaroMet állomás átlagát mutatják. Ha egy állomás sincs a sugáron belül, a legközelebbit használja.",
+        "data": {
+          "name": "Név",
+          "distance_km": "Állomáskeresési sugár (km)",
+          "forecast_settlement": "Előrejelzés települése (nem kötelező)",
+          "location": "Időjárás-érzékelők helye"
+        },
+        "data_description": {
+          "distance_km": "A helytől ennyi távolságon belüli állomások átlagát számolja (1–100 km).",
+          "forecast_settlement": "A HungaroMet Előrejelzés eszköz települése, pl. Debrecen. Ékezetekkel írja. Hagyja üresen, ha nem kér előrejelzést.",
+          "location": "Honnan mérje az állomáskeresési sugarat: a Home Assistant otthoni helyétől vagy az előrejelzés településétől."
+        }
+      }
+    },
+    "error": {
+      "settlement_not_found": "A met.hu nem ismeri ezt a települést. Ellenőrizze az írásmódot, az ékezeteket is (é, á, ő …).",
+      "cannot_connect": "A met.hu nem érhető el. Próbálja újra később.",
+      "settlement_required": "Adja meg az előrejelzés települését, hogy helyként használhassa."
+    },
+    "abort": {
+      "already_configured": "Az országos radar bejegyzés már létezik."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HungaroMet Weather & Forecast beállítások",
+        "data": {
+          "distance_km": "Állomáskeresési sugár (km)",
+          "forecast_settlement": "Előrejelzés települése (nem kötelező)",
+          "location": "Időjárás-érzékelők helye"
+        },
+        "data_description": {
+          "distance_km": "A helytől ennyi távolságon belüli állomások átlagát számolja (1–100 km).",
+          "forecast_settlement": "A HungaroMet Előrejelzés eszköz települése, pl. Debrecen. Ékezetekkel írja. Hagyja üresen, ha nem kér előrejelzést.",
+          "location": "Honnan mérje az állomáskeresési sugarat: a Home Assistant otthoni helyétől vagy az előrejelzés településétől."
+        }
+      }
+    },
+    "error": {
+      "settlement_not_found": "A met.hu nem ismeri ezt a települést. Ellenőrizze az írásmódot, az ékezeteket is (é, á, ő …).",
+      "cannot_connect": "A met.hu nem érhető el. Próbálja újra később.",
+      "settlement_required": "Adja meg az előrejelzés települését, hogy helyként használhassa."
+    }
+  },
+  "selector": {
+    "location": {
+      "options": {
+        "home": "Otthon",
+        "settlement": "Előrejelzés települése"
+      }
+    }
+  },
+  "device": {
+    "daily": {
+      "name": "{name} Napi Időjárás"
+    },
+    "hourly": {
+      "name": "{name} Órás Időjárás"
+    },
+    "ten_minutes": {
+      "name": "{name} 10 Perces Időjárás"
+    },
+    "radar": {
+      "name": "Országos Radarkép"
+    },
+    "regional_radar": {
+      "name": "{name} Regionális Radarkép"
+    },
+    "forecast": {
+      "name": "{name} Előrejelzés"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "stations": {
+        "name": "Állomások"
+      },
+      "daily_latitude": {
+        "name": "Földrajzi szélesség"
+      },
+      "daily_longitude": {
+        "name": "Földrajzi hosszúság"
+      },
+      "daily_elevation": {
+        "name": "Tengerszint feletti magasság"
+      },
+      "daily_et5": {
+        "name": "Átlagos 5 cm-es talajhőmérséklet"
+      },
+      "daily_et10": {
+        "name": "Átlagos 10 cm-es talajhőmérséklet"
+      },
+      "daily_et20": {
+        "name": "Átlagos 20 cm-es talajhőmérséklet"
+      },
+      "daily_et50": {
+        "name": "Átlagos 50 cm-es talajhőmérséklet"
+      },
+      "daily_et100": {
+        "name": "Átlagos 100 cm-es talajhőmérséklet"
+      },
+      "daily_time": {
+        "name": "Mérési időpont"
+      },
+      "daily_upe": {
+        "name": "Párolgás"
+      },
+      "daily_rau": {
+        "name": "Csapadékösszeg"
+      },
+      "daily_water_balance": {
+        "name": "Vízegyenleg"
+      },
+      "daily_t": {
+        "name": "Átlaghőmérséklet"
+      },
+      "daily_tn": {
+        "name": "Minimumhőmérséklet"
+      },
+      "daily_tx": {
+        "name": "Maximumhőmérséklet"
+      },
+      "daily_sr": {
+        "name": "Globálsugárzás összeg"
+      },
+      "daily_sr_mj": {
+        "name": "Globálsugárzás összeg (MJ/m²)"
+      },
+      "daily_tsn24": {
+        "name": "Felszínközeli hőmérséklet minimuma"
+      },
+      "daily_v": {
+        "name": "Átlagos látástávolság"
+      },
+      "daily_p": {
+        "name": "Átlagos műszerszinti légnyomás"
+      },
+      "daily_p0": {
+        "name": "Átlagos tengerszinti légnyomás"
+      },
+      "daily_u": {
+        "name": "Átlagos relatív nedvesség"
+      },
+      "daily_sg": {
+        "name": "Átlagos gammadózis"
+      },
+      "daily_suv": {
+        "name": "UV sugárzás összeg"
+      },
+      "daily_fs": {
+        "name": "Átlagos szinoptikus szélsebesség"
+      },
+      "daily_f": {
+        "name": "Átlagos szélsebesség"
+      },
+      "daily_fx": {
+        "name": "Maximális széllökés sebessége"
+      },
+      "daily_fxd": {
+        "name": "Maximális széllökés iránya"
+      },
+      "daily_fxdat": {
+        "name": "Maximális széllökés ideje"
+      },
+      "daily_fud": {
+        "name": "Uralkodó szélirány",
+        "state": {
+          "n": "É",
+          "nne": "ÉÉK",
+          "ne": "ÉK",
+          "ene": "KÉK",
+          "e": "K",
+          "ese": "KDK",
+          "se": "DK",
+          "sse": "DDK",
+          "s": "D",
+          "ssw": "DDNy",
+          "sw": "DNy",
+          "wsw": "NyDNy",
+          "w": "Ny",
+          "wnw": "NyÉNy",
+          "nw": "ÉNy",
+          "nnw": "ÉÉNy"
+        }
+      },
+      "daily_tviz": {
+        "name": "Átlagos vízhőmérséklet"
+      },
+      "hourly_latitude": {
+        "name": "Földrajzi szélesség"
+      },
+      "hourly_longitude": {
+        "name": "Földrajzi hosszúság"
+      },
+      "hourly_elevation": {
+        "name": "Tengerszint feletti magasság"
+      },
+      "hourly_et5": {
+        "name": "Pillanatnyi 5 cm-es talajhőmérséklet"
+      },
+      "hourly_et10": {
+        "name": "Pillanatnyi 10 cm-es talajhőmérséklet"
+      },
+      "hourly_et20": {
+        "name": "Pillanatnyi 20 cm-es talajhőmérséklet"
+      },
+      "hourly_et50": {
+        "name": "Pillanatnyi 50 cm-es talajhőmérséklet"
+      },
+      "hourly_et100": {
+        "name": "Pillanatnyi 100 cm-es talajhőmérséklet"
+      },
+      "hourly_time": {
+        "name": "Mérési időpont"
+      },
+      "hourly_r": {
+        "name": "Csapadékösszeg"
+      },
+      "hourly_t": {
+        "name": "Pillanatnyi hőmérséklet"
+      },
+      "hourly_ta": {
+        "name": "Átlaghőmérséklet"
+      },
+      "hourly_tn": {
+        "name": "Minimumhőmérséklet"
+      },
+      "hourly_tx": {
+        "name": "Maximumhőmérséklet"
+      },
+      "hourly_u": {
+        "name": "Pillanatnyi relatív nedvesség"
+      },
+      "hourly_sg": {
+        "name": "Átlagos gammadózis"
+      },
+      "hourly_sr": {
+        "name": "Globálsugárzás összeg"
+      },
+      "hourly_sr_mj": {
+        "name": "Globálsugárzás összeg (MJ/m²)"
+      },
+      "hourly_suv": {
+        "name": "UV sugárzás összeg"
+      },
+      "hourly_fx": {
+        "name": "Maximális széllökés sebessége"
+      },
+      "hourly_fxd": {
+        "name": "Maximális széllökés iránya"
+      },
+      "hourly_tsn": {
+        "name": "Felszínközeli hőmérséklet minimuma"
+      },
+      "hourly_tviz": {
+        "name": "Pillanatnyi vízhőmérséklet"
+      },
+      "hourly_fs": {
+        "name": "Szinoptikus szélsebesség"
+      },
+      "hourly_fsd": {
+        "name": "Szinoptikus szélirány"
+      },
+      "hourly_f": {
+        "name": "Átlagos szélsebesség"
+      },
+      "hourly_fd": {
+        "name": "Szélirány"
+      },
+      "hourly_we": {
+        "name": "Pillanatnyi időkép kódja"
+      },
+      "hourly_v": {
+        "name": "Pillanatnyi látástávolság"
+      },
+      "hourly_p": {
+        "name": "Pillanatnyi műszerszinti légnyomás"
+      },
+      "hourly_p0": {
+        "name": "Pillanatnyi tengerszinti légnyomás"
+      },
+      "hourly_fxdat": {
+        "name": "Maximális széllökés ideje"
+      },
+      "ten_minutes_latitude": {
+        "name": "Földrajzi szélesség"
+      },
+      "ten_minutes_longitude": {
+        "name": "Földrajzi hosszúság"
+      },
+      "ten_minutes_elevation": {
+        "name": "Tengerszint feletti magasság"
+      },
+      "ten_minutes_et5": {
+        "name": "5 cm-es talajhőmérséklet"
+      },
+      "ten_minutes_et10": {
+        "name": "10 cm-es talajhőmérséklet"
+      },
+      "ten_minutes_et20": {
+        "name": "20 cm-es talajhőmérséklet"
+      },
+      "ten_minutes_et50": {
+        "name": "50 cm-es talajhőmérséklet"
+      },
+      "ten_minutes_et100": {
+        "name": "100 cm-es talajhőmérséklet"
+      },
+      "ten_minutes_time": {
+        "name": "Mérési időpont"
+      },
+      "ten_minutes_r": {
+        "name": "Csapadékösszeg"
+      },
+      "ten_minutes_t": {
+        "name": "Pillanatnyi hőmérséklet"
+      },
+      "ten_minutes_ta": {
+        "name": "Átlaghőmérséklet"
+      },
+      "ten_minutes_tn": {
+        "name": "Minimumhőmérséklet"
+      },
+      "ten_minutes_tx": {
+        "name": "Maximumhőmérséklet"
+      },
+      "ten_minutes_u": {
+        "name": "Pillanatnyi relatív nedvesség"
+      },
+      "ten_minutes_sg": {
+        "name": "Átlagos gammadózis"
+      },
+      "ten_minutes_sr": {
+        "name": "Globálsugárzás összeg"
+      },
+      "ten_minutes_sr_mj": {
+        "name": "Globálsugárzás összeg (MJ/m²)"
+      },
+      "ten_minutes_suv": {
+        "name": "UV sugárzás összeg"
+      },
+      "ten_minutes_fx": {
+        "name": "Maximális széllökés sebessége"
+      },
+      "ten_minutes_fxd": {
+        "name": "Maximális széllökés iránya"
+      },
+      "ten_minutes_tsn": {
+        "name": "Felszínközeli hőmérséklet minimuma"
+      },
+      "ten_minutes_tviz": {
+        "name": "Pillanatnyi vízhőmérséklet"
+      },
+      "ten_minutes_fs": {
+        "name": "Átlagos szélsebesség"
+      },
+      "ten_minutes_fsd": {
+        "name": "Szélirány"
+      },
+      "ten_minutes_v": {
+        "name": "Pillanatnyi látástávolság"
+      },
+      "ten_minutes_p": {
+        "name": "Pillanatnyi műszerszinti légnyomás"
+      },
+      "ten_minutes_fxdat": {
+        "name": "Maximális széllökés ideje"
+      },
+      "forecast_temperature": {
+        "name": "Hőmérséklet"
+      },
+      "forecast_temperature_min": {
+        "name": "Mai minimum hőmérséklet"
+      },
+      "forecast_temperature_max": {
+        "name": "Mai maximum hőmérséklet"
+      },
+      "forecast_precipitation": {
+        "name": "Csapadék"
+      },
+      "forecast_cloud_cover": {
+        "name": "Felhőzet"
+      },
+      "forecast_wind_speed": {
+        "name": "Szélsebesség"
+      },
+      "forecast_wind_gust": {
+        "name": "Széllökés"
+      },
+      "forecast_wind_bearing": {
+        "name": "Szélirány (fok)"
+      },
+      "forecast_wind_direction": {
+        "name": "Szélirány (égtáj)",
+        "state": {
+          "n": "É",
+          "nne": "ÉÉK",
+          "ne": "ÉK",
+          "ene": "KÉK",
+          "e": "K",
+          "ese": "KDK",
+          "se": "DK",
+          "sse": "DDK",
+          "s": "D",
+          "ssw": "DDNy",
+          "sw": "DNy",
+          "wsw": "NyDNy",
+          "w": "Ny",
+          "wnw": "NyÉNy",
+          "nw": "ÉNy",
+          "nnw": "ÉÉNy",
+          "calm": "Szélcsend",
+          "variable": "Változó"
+        }
+      },
+      "forecast_pressure": {
+        "name": "Légnyomás"
+      },
+      "forecast_weather_condition": {
+        "name": "Időjárás",
+        "state": {
+          "sunny": "Napos",
+          "clear-night": "Derült éjszaka",
+          "partlycloudy": "Részben felhős",
+          "cloudy": "Felhős",
+          "fog": "Köd",
+          "rainy": "Eső",
+          "lightning-rainy": "Zivatar",
+          "snowy-rainy": "Havas eső",
+          "snowy": "Havazás",
+          "hail": "Jégeső",
+          "pouring": "Zápor",
+          "exceptional": "Rendkívüli"
+        }
+      },
+      "forecast_issued": {
+        "name": "Kiadva"
+      }
+    }
+  },
+  "services": {
+    "update": {
+      "name": "Frissítés",
+      "description": "Minden HungaroMet bejegyzés azonnali frissítése: a napi, órás és 10 perces időjárás-érzékelők, az előrejelzés, valamint a regionális és az országos radarkép."
+    }
+  }
+}

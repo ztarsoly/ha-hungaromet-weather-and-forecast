@@ -1,0 +1,8 @@
+# Services for HungaroMet Weather & Forecast
+
+update:
+  name: Update
+  description: >-
+    Update every HungaroMet entry now: the daily, hourly and 10-minute weather
+    sensors, the forecast, and the regional and national radar images.
+  fields: {}

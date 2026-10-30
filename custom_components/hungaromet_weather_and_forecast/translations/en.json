@@ -1,0 +1,454 @@
+{
+  "title": "HungaroMet Weather & Forecast",
+  "config": {
+    "step": {
+      "user": {
+        "title": "Set up HungaroMet Weather & Forecast",
+        "description": "Sensors show the average of all HungaroMet stations within the search radius of the selected location. If no station is in range, the nearest one is used.",
+        "data": {
+          "name": "Name",
+          "distance_km": "Station search radius (km)",
+          "forecast_settlement": "Forecast settlement (optional)",
+          "location": "Weather sensor location"
+        },
+        "data_description": {
+          "distance_km": "Stations within this distance of the location are averaged (1–100 km).",
+          "forecast_settlement": "Hungarian settlement for the HungaroMet Forecast device, e.g. Debrecen. Use accented letters. Leave empty for no forecast.",
+          "location": "Where the station search radius is measured from: Home Assistant's home location, or the forecast settlement."
+        }
+      }
+    },
+    "error": {
+      "settlement_not_found": "met.hu does not know this settlement. Check the spelling, including accents (é, á, ő …).",
+      "cannot_connect": "Could not reach met.hu. Try again later.",
+      "settlement_required": "Enter a forecast settlement to use it as the location."
+    },
+    "abort": {
+      "already_configured": "The national radar entry already exists."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "HungaroMet Weather & Forecast options",
+        "data": {
+          "distance_km": "Station search radius (km)",
+          "forecast_settlement": "Forecast settlement (optional)",
+          "location": "Weather sensor location"
+        },
+        "data_description": {
+          "distance_km": "Stations within this distance of the location are averaged (1–100 km).",
+          "forecast_settlement": "Hungarian settlement for the HungaroMet Forecast device, e.g. Debrecen. Use accented letters. Leave empty for no forecast.",
+          "location": "Where the station search radius is measured from: Home Assistant's home location, or the forecast settlement."
+        }
+      }
+    },
+    "error": {
+      "settlement_not_found": "met.hu does not know this settlement. Check the spelling, including accents (é, á, ő …).",
+      "cannot_connect": "Could not reach met.hu. Try again later.",
+      "settlement_required": "Enter a forecast settlement to use it as the location."
+    }
+  },
+  "selector": {
+    "location": {
+      "options": {
+        "home": "Home",
+        "settlement": "Forecast settlement"
+      }
+    }
+  },
+  "device": {
+    "daily": {
+      "name": "{name} Daily Weather"
+    },
+    "hourly": {
+      "name": "{name} Hourly Weather"
+    },
+    "ten_minutes": {
+      "name": "{name} 10-Minute Weather"
+    },
+    "radar": {
+      "name": "National Radar Image"
+    },
+    "regional_radar": {
+      "name": "{name} Regional Radar Image"
+    },
+    "forecast": {
+      "name": "{name} Forecast"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "stations": {
+        "name": "Stations"
+      },
+      "daily_latitude": {
+        "name": "Latitude"
+      },
+      "daily_longitude": {
+        "name": "Longitude"
+      },
+      "daily_elevation": {
+        "name": "Elevation"
+      },
+      "daily_et5": {
+        "name": "Mean soil temperature at 5 cm"
+      },
+      "daily_et10": {
+        "name": "Mean soil temperature at 10 cm"
+      },
+      "daily_et20": {
+        "name": "Mean soil temperature at 20 cm"
+      },
+      "daily_et50": {
+        "name": "Mean soil temperature at 50 cm"
+      },
+      "daily_et100": {
+        "name": "Mean soil temperature at 100 cm"
+      },
+      "daily_time": {
+        "name": "Measurement time"
+      },
+      "daily_upe": {
+        "name": "Evaporation"
+      },
+      "daily_rau": {
+        "name": "Precipitation"
+      },
+      "daily_water_balance": {
+        "name": "Water balance"
+      },
+      "daily_t": {
+        "name": "Mean temperature"
+      },
+      "daily_tn": {
+        "name": "Minimum temperature"
+      },
+      "daily_tx": {
+        "name": "Maximum temperature"
+      },
+      "daily_sr": {
+        "name": "Global radiation"
+      },
+      "daily_sr_mj": {
+        "name": "Global radiation (MJ/m²)"
+      },
+      "daily_tsn24": {
+        "name": "Near-surface minimum temperature"
+      },
+      "daily_v": {
+        "name": "Mean visibility"
+      },
+      "daily_p": {
+        "name": "Mean station pressure"
+      },
+      "daily_p0": {
+        "name": "Mean sea-level pressure"
+      },
+      "daily_u": {
+        "name": "Mean relative humidity"
+      },
+      "daily_sg": {
+        "name": "Mean gamma dose rate"
+      },
+      "daily_suv": {
+        "name": "UV radiation"
+      },
+      "daily_fs": {
+        "name": "Mean synoptic wind speed"
+      },
+      "daily_f": {
+        "name": "Mean wind speed"
+      },
+      "daily_fx": {
+        "name": "Maximum wind gust speed"
+      },
+      "daily_fxd": {
+        "name": "Maximum wind gust direction"
+      },
+      "daily_fxdat": {
+        "name": "Maximum wind gust time"
+      },
+      "daily_fud": {
+        "name": "Prevailing wind direction",
+        "state": {
+          "n": "N",
+          "nne": "NNE",
+          "ne": "NE",
+          "ene": "ENE",
+          "e": "E",
+          "ese": "ESE",
+          "se": "SE",
+          "sse": "SSE",
+          "s": "S",
+          "ssw": "SSW",
+          "sw": "SW",
+          "wsw": "WSW",
+          "w": "W",
+          "wnw": "WNW",
+          "nw": "NW",
+          "nnw": "NNW"
+        }
+      },
+      "daily_tviz": {
+        "name": "Mean water temperature"
+      },
+      "hourly_latitude": {
+        "name": "Latitude"
+      },
+      "hourly_longitude": {
+        "name": "Longitude"
+      },
+      "hourly_elevation": {
+        "name": "Elevation"
+      },
+      "hourly_et5": {
+        "name": "Soil temperature at 5 cm"
+      },
+      "hourly_et10": {
+        "name": "Soil temperature at 10 cm"
+      },
+      "hourly_et20": {
+        "name": "Soil temperature at 20 cm"
+      },
+      "hourly_et50": {
+        "name": "Soil temperature at 50 cm"
+      },
+      "hourly_et100": {
+        "name": "Soil temperature at 100 cm"
+      },
+      "hourly_time": {
+        "name": "Measurement time"
+      },
+      "hourly_r": {
+        "name": "Precipitation"
+      },
+      "hourly_t": {
+        "name": "Temperature"
+      },
+      "hourly_ta": {
+        "name": "Mean temperature"
+      },
+      "hourly_tn": {
+        "name": "Minimum temperature"
+      },
+      "hourly_tx": {
+        "name": "Maximum temperature"
+      },
+      "hourly_u": {
+        "name": "Relative humidity"
+      },
+      "hourly_sg": {
+        "name": "Mean gamma dose rate"
+      },
+      "hourly_sr": {
+        "name": "Global radiation"
+      },
+      "hourly_sr_mj": {
+        "name": "Global radiation (MJ/m²)"
+      },
+      "hourly_suv": {
+        "name": "UV radiation"
+      },
+      "hourly_fx": {
+        "name": "Maximum wind gust speed"
+      },
+      "hourly_fxd": {
+        "name": "Maximum wind gust direction"
+      },
+      "hourly_tsn": {
+        "name": "Near-surface minimum temperature"
+      },
+      "hourly_tviz": {
+        "name": "Water temperature"
+      },
+      "hourly_fs": {
+        "name": "Synoptic wind speed"
+      },
+      "hourly_fsd": {
+        "name": "Synoptic wind direction"
+      },
+      "hourly_f": {
+        "name": "Mean wind speed"
+      },
+      "hourly_fd": {
+        "name": "Wind direction"
+      },
+      "hourly_we": {
+        "name": "Weather code"
+      },
+      "hourly_v": {
+        "name": "Visibility"
+      },
+      "hourly_p": {
+        "name": "Station pressure"
+      },
+      "hourly_p0": {
+        "name": "Sea-level pressure"
+      },
+      "hourly_fxdat": {
+        "name": "Maximum wind gust time"
+      },
+      "ten_minutes_latitude": {
+        "name": "Latitude"
+      },
+      "ten_minutes_longitude": {
+        "name": "Longitude"
+      },
+      "ten_minutes_elevation": {
+        "name": "Elevation"
+      },
+      "ten_minutes_et5": {
+        "name": "Soil temperature at 5 cm"
+      },
+      "ten_minutes_et10": {
+        "name": "Soil temperature at 10 cm"
+      },
+      "ten_minutes_et20": {
+        "name": "Soil temperature at 20 cm"
+      },
+      "ten_minutes_et50": {
+        "name": "Soil temperature at 50 cm"
+      },
+      "ten_minutes_et100": {
+        "name": "Soil temperature at 100 cm"
+      },
+      "ten_minutes_time": {
+        "name": "Measurement time"
+      },
+      "ten_minutes_r": {
+        "name": "Precipitation"
+      },
+      "ten_minutes_t": {
+        "name": "Temperature"
+      },
+      "ten_minutes_ta": {
+        "name": "Mean temperature"
+      },
+      "ten_minutes_tn": {
+        "name": "Minimum temperature"
+      },
+      "ten_minutes_tx": {
+        "name": "Maximum temperature"
+      },
+      "ten_minutes_u": {
+        "name": "Relative humidity"
+      },
+      "ten_minutes_sg": {
+        "name": "Mean gamma dose rate"
+      },
+      "ten_minutes_sr": {
+        "name": "Global radiation"
+      },
+      "ten_minutes_sr_mj": {
+        "name": "Global radiation (MJ/m²)"
+      },
+      "ten_minutes_suv": {
+        "name": "UV radiation"
+      },
+      "ten_minutes_fx": {
+        "name": "Maximum wind gust speed"
+      },
+      "ten_minutes_fxd": {
+        "name": "Maximum wind gust direction"
+      },
+      "ten_minutes_tsn": {
+        "name": "Near-surface minimum temperature"
+      },
+      "ten_minutes_tviz": {
+        "name": "Water temperature"
+      },
+      "ten_minutes_fs": {
+        "name": "Mean wind speed"
+      },
+      "ten_minutes_fsd": {
+        "name": "Wind direction"
+      },
+      "ten_minutes_v": {
+        "name": "Visibility"
+      },
+      "ten_minutes_p": {
+        "name": "Station pressure"
+      },
+      "ten_minutes_fxdat": {
+        "name": "Maximum wind gust time"
+      },
+      "forecast_temperature": {
+        "name": "Temperature"
+      },
+      "forecast_temperature_min": {
+        "name": "Today's minimum temperature"
+      },
+      "forecast_temperature_max": {
+        "name": "Today's maximum temperature"
+      },
+      "forecast_precipitation": {
+        "name": "Precipitation"
+      },
+      "forecast_cloud_cover": {
+        "name": "Cloud cover"
+      },
+      "forecast_wind_speed": {
+        "name": "Wind speed"
+      },
+      "forecast_wind_gust": {
+        "name": "Wind gust"
+      },
+      "forecast_wind_bearing": {
+        "name": "Wind bearing"
+      },
+      "forecast_wind_direction": {
+        "name": "Wind direction",
+        "state": {
+          "n": "N",
+          "nne": "NNE",
+          "ne": "NE",
+          "ene": "ENE",
+          "e": "E",
+          "ese": "ESE",
+          "se": "SE",
+          "sse": "SSE",
+          "s": "S",
+          "ssw": "SSW",
+          "sw": "SW",
+          "wsw": "WSW",
+          "w": "W",
+          "wnw": "WNW",
+          "nw": "NW",
+          "nnw": "NNW",
+          "calm": "Calm",
+          "variable": "Variable"
+        }
+      },
+      "forecast_pressure": {
+        "name": "Pressure"
+      },
+      "forecast_weather_condition": {
+        "name": "Condition",
+        "state": {
+          "sunny": "Sunny",
+          "clear-night": "Clear night",
+          "partlycloudy": "Partly cloudy",
+          "cloudy": "Cloudy",
+          "fog": "Fog",
+          "rainy": "Rainy",
+          "lightning-rainy": "Lightning, rainy",
+          "snowy-rainy": "Snowy, rainy",
+          "snowy": "Snowy",
+          "hail": "Hail",
+          "pouring": "Pouring",
+          "exceptional": "Exceptional"
+        }
+      },
+      "forecast_issued": {
+        "name": "Issued"
+      }
+    }
+  },
+  "services": {
+    "update": {
+      "name": "Update",
+      "description": "Update every HungaroMet entry now: the daily, hourly and 10-minute weather sensors, the forecast, and the regional and national radar images."
+    }
+  }
+}
