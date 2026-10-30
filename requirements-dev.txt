@@ -1,3 +1,10 @@
+# The integration's own packages, as in manifest.json
+pandas
+requests
+Pillow
+beautifulsoup4
+
+# Home Assistant and the test and check tools
 homeassistant>=2024.12.0
 pytest
 pytest-asyncio
