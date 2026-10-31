@@ -24,6 +24,9 @@ _LOGGER = logging.getLogger(__name__)
 
 REQUEST_TIMEOUT = 10
 
+# met.hu's radar page, the radar devices' "Visit" link
+RADAR_WEB_PAGE = "https://www.met.hu/idojaras/aktualis_idojaras/radar/"
+
 # Both radar animations: the newest 5 frames (25 minutes), 1 s each, and the
 # newest frame held for 2 s before the loop starts again
 FRAME_COUNT = 5

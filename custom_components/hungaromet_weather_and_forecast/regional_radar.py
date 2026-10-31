@@ -9,7 +9,7 @@ import re
 
 import requests
 
-from .radar import FRAME_COUNT, REQUEST_TIMEOUT, RadarImage, localized
+from .radar import FRAME_COUNT, RADAR_WEB_PAGE, REQUEST_TIMEOUT, RadarImage, localized
 from .scope import EntryScope, device_info, scoped_id
 
 RADAR_PAGE_URL = "https://www.met.hu/idojaras/aktualis_idojaras/radar/main.php"
@@ -66,7 +66,10 @@ class HungarometRegionalRadarImage(RadarImage):
 
     @property
     def device_info(self):
-        return device_info(self._scope, DEVICE_ID, "regional_radar", "Regional radar image")
+        return {
+            **device_info(self._scope, DEVICE_ID, "regional_radar", "Regional radar image"),
+            "configuration_url": RADAR_WEB_PAGE,
+        }
 
     @property
     def extra_state_attributes(self):

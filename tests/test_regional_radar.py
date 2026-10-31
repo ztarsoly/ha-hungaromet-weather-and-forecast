@@ -124,6 +124,9 @@ def test_regional_radar_entity():
     assert entity.device_info["translation_key"] == "regional_radar"
     assert entity.device_info["model"] == "Regional radar image"
     assert entity.device_info["translation_placeholders"] == {"name": "HungaroMet"}
+    assert entity.device_info["configuration_url"] == (
+        "https://www.met.hu/idojaras/aktualis_idojaras/radar/"
+    )
     assert entity.extra_state_attributes["quadrant"] == "ne"
     assert entity.extra_state_attributes["update_counter"] == 0
 

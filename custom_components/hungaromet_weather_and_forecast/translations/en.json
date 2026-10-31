@@ -12,7 +12,8 @@
           "location": "Weather sensor location"
         },
         "data_description": {
-          "distance_km": "Stations within this distance of the location are averaged (1–100 km).",
+          "name": "The name of this entry and its devices (e.g. Home).",
+          "distance_km": "Sensors show the average of all HungaroMet stations within the search radius of the selected location. If no station is in range, the nearest one is used.",
           "forecast_settlement": "Hungarian settlement for the HungaroMet Forecast device, e.g. Debrecen. Use accented letters. Leave empty for no forecast.",
           "location": "Where the station search radius is measured from: Home Assistant's home location, or the forecast settlement."
         }
@@ -38,8 +39,8 @@
           "location": "Weather sensor location"
         },
         "data_description": {
-          "name": "Renames the entry and its devices. A device name you changed is updated only where it contains the current name.",
-          "distance_km": "Stations within this distance of the location are averaged (1–100 km).",
+          "name": "The name of this entry; device names that contain it are renamed too.",
+          "distance_km": "Sensors show the average of all HungaroMet stations within the search radius of the selected location. If no station is in range, the nearest one is used.",
           "forecast_settlement": "Hungarian settlement for the HungaroMet Forecast device, e.g. Debrecen. Use accented letters. Leave empty for no forecast.",
           "location": "Where the station search radius is measured from: Home Assistant's home location, or the forecast settlement."
         }

@@ -12,7 +12,8 @@
           "location": "Időjárás-érzékelők helye"
         },
         "data_description": {
-          "distance_km": "A helytől ennyi távolságon belüli állomások átlagát számolja (1–100 km).",
+          "name": "A bejegyzés és eszközei neve (pl. Otthon).",
+          "distance_km": "Az érzékelők a kiválasztott helytől a keresési sugáron belüli összes HungaroMet-állomás átlagát mutatják. Ha egy állomás sincs a sugáron belül, a legközelebbit használják.",
           "forecast_settlement": "A HungaroMet Előrejelzés eszköz települése, pl. Debrecen. Ékezetekkel írja. Hagyja üresen, ha nem kér előrejelzést.",
           "location": "Honnan mérje az állomáskeresési sugarat: a Home Assistant otthoni helyétől vagy az előrejelzés településétől."
         }
@@ -38,8 +39,8 @@
           "location": "Időjárás-érzékelők helye"
         },
         "data_description": {
-          "name": "Átnevezi a bejegyzést és az eszközeit. Az Ön által átnevezett eszköz nevében csak a jelenlegi név cserélődik.",
-          "distance_km": "A helytől ennyi távolságon belüli állomások átlagát számolja (1–100 km).",
+          "name": "A bejegyzés neve; az ezt tartalmazó eszköznevek is átneveződnek.",
+          "distance_km": "Az érzékelők a kiválasztott helytől a keresési sugáron belüli összes HungaroMet-állomás átlagát mutatják. Ha egy állomás sincs a sugáron belül, a legközelebbit használják.",
           "forecast_settlement": "A HungaroMet Előrejelzés eszköz települése, pl. Debrecen. Ékezetekkel írja. Hagyja üresen, ha nem kér előrejelzést.",
           "location": "Honnan mérje az állomáskeresési sugarat: a Home Assistant otthoni helyétől vagy az előrejelzés településétől."
         }

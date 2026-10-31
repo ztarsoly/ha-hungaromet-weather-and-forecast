@@ -9,7 +9,7 @@ from bs4 import BeautifulSoup
 from bs4.element import Tag
 
 from .const import DOMAIN, RADAR_BASE_URL
-from .radar import FRAME_COUNT, REQUEST_TIMEOUT, RadarImage, localized
+from .radar import FRAME_COUNT, RADAR_WEB_PAGE, REQUEST_TIMEOUT, RadarImage, localized
 
 # The radar images' own names, in Home Assistant's language. Translated entity
 # names always follow the device name ("National Radar Image National radar
@@ -45,8 +45,6 @@ def get_latest_image_urls(base_url, count=FRAME_COUNT):
 
 
 DEVICE_ID = "hungaromet_radar_gif"
-# met.hu's radar page, the device's "Visit" link
-RADAR_WEB_PAGE = "https://www.met.hu/idojaras/aktualis_idojaras/radar/"
 
 
 class HungarometRadarImage(RadarImage):
