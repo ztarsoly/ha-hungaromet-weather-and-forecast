@@ -45,6 +45,8 @@ def get_latest_image_urls(base_url, count=FRAME_COUNT):
 
 
 DEVICE_ID = "hungaromet_radar_gif"
+# met.hu's radar page, the device's "Visit" link
+RADAR_WEB_PAGE = "https://www.met.hu/idojaras/aktualis_idojaras/radar/"
 
 
 class HungarometRadarImage(RadarImage):
@@ -68,6 +70,7 @@ class HungarometRadarImage(RadarImage):
             "manufacturer": "HungaroMet",
             "model": "National radar image",
             "entry_type": "service",
+            "configuration_url": RADAR_WEB_PAGE,
         }
 
     def _list_frames(self):

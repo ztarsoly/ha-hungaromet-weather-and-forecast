@@ -314,6 +314,9 @@ def test_radar_image_names_and_ids():
     assert image.name == "National radar image"
     assert image.unique_id == "hungaromet_radar_gif_hungaromet_radar"
     assert image.device_info["model"] == "National radar image"
+    assert image.device_info["configuration_url"] == (
+        "https://www.met.hu/idojaras/aktualis_idojaras/radar/"
+    )
     assert image.device_info["translation_key"] == "radar"
     assert image.state is None
     assert image.extra_state_attributes == {"last_updated": None, "update_counter": 0}
