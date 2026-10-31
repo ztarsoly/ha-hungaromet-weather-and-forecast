@@ -4,7 +4,6 @@
     "step": {
       "user": {
         "title": "HungaroMet Weather & Forecast beállítása",
-        "description": "Az érzékelők a kiválasztott helytől számított keresési sugáron belüli összes HungaroMet állomás átlagát mutatják. Ha egy állomás sincs a sugáron belül, a legközelebbit használja.",
         "data": {
           "name": "Név",
           "distance_km": "Állomáskeresési sugár (km)",

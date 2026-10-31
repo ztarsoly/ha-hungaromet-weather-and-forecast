@@ -4,7 +4,6 @@
     "step": {
       "user": {
         "title": "Set up HungaroMet Weather & Forecast",
-        "description": "Sensors show the average of all HungaroMet stations within the search radius of the selected location. If no station is in range, the nearest one is used.",
         "data": {
           "name": "Name",
           "distance_km": "Station search radius (km)",
