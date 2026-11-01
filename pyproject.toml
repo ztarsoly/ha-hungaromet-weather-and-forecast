@@ -1,4 +1,4 @@
-# Settings of the test and check tools; the packages are in requirements.txt
+# Settings of the test and check tools; the packages are in requirements_test.txt
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
