@@ -2,13 +2,12 @@
 
 import logging
 from dataclasses import asdict
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
-from homeassistant.helpers.event import async_track_utc_time_change
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
@@ -24,7 +23,6 @@ from .forecast_scraper import (
     FORECAST_PAGE_URL,
     ForecastData,
     Settlement,
-    advance_to_now,
     fetch_forecast,
     forecast_from_dict,
     forecast_to_dict,
@@ -162,18 +160,6 @@ class ForecastCoordinator(DataUpdateCoordinator[ForecastData]):
         """Download the forecast for the update service."""
         await self._async_scheduled_download()
 
-    @callback
-    def async_advance_hour(self, now: datetime) -> None:
-        """Move the current hour on at each full hour, from the stored forecast.
-
-        The download at the same time replaces this when it succeeds; this keeps
-        the current-hour sensors and the forecasts on time when it fails.
-        """
-        if self.data is None:
-            return
-        advance_to_now(self.data, now)
-        self.async_update_listeners()
-
     async def _async_update_data(self) -> ForecastData:
         session = async_get_clientsession(self.hass)
         try:
@@ -207,11 +193,6 @@ async def async_setup_forecast(
     entry.async_on_unload(
         async_register_updater(
             hass, f"{entry.entry_id}_forecast", coordinator.async_update_now
-        )
-    )
-    entry.async_on_unload(
-        async_track_utc_time_change(
-            hass, coordinator.async_advance_hour, minute=0, second=0
         )
     )
     return coordinator

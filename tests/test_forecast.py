@@ -488,16 +488,8 @@ async def test_setup_forecast_schedules_refreshes():
     hass = MagicMock(data={})
     coordinator = MagicMock(async_load_stored=AsyncMock())
     schedule = coordinator.schedule
-    with (
-        patch.object(forecast, "ForecastCoordinator", return_value=coordinator),
-        patch.object(forecast, "async_track_utc_time_change") as track,
-    ):
+    with patch.object(forecast, "ForecastCoordinator", return_value=coordinator):
         assert await forecast.async_setup_forecast(hass, entry) is coordinator
-
-    # The current hour moves on at every full hour, without downloading
-    track.assert_called_once_with(
-        hass, coordinator.async_advance_hour, minute=0, second=0
-    )
 
     unloads = [c.args[0] for c in entry.async_on_unload.call_args_list]
     assert unloads[0] is schedule.start.return_value
@@ -506,7 +498,7 @@ async def test_setup_forecast_schedules_refreshes():
     assert registered == {"e1_forecast": coordinator.async_update_now}
     unloads[1]()
     assert registered == {}
-    assert unloads[2] is track.return_value
+    assert len(unloads) == 2
     # The first download is left until the entities are added
     schedule.async_run_now.assert_not_called()
     # The forecast saved before a restart is loaded first

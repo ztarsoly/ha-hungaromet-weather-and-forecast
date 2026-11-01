@@ -156,49 +156,12 @@ def _data():
     return ForecastData(settlement="X", current=hourly[2], periods=periods, hourly=hourly)
 
 
-def test_advance_to_now_moves_the_current_hour():
-    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
-        advance_to_now,
-    )
-
-    data = _data()
-    advance_to_now(data, datetime(2026, 10, 28, 16, 0, tzinfo=HUNGARY_TZ))
-    assert (data.current.forecast_time.hour, data.current.temperature) == (16, 13.0)
-
-    # Beyond the hourly range, the nearest met.hu row is used
-    advance_to_now(data, datetime(2026, 10, 30, 9, 0, tzinfo=HUNGARY_TZ))
-    assert data.current is data.periods[-1]
-
-
 def test_current_period_without_any_rows():
     from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
         current_period,
     )
 
     assert current_period([], [], datetime(2026, 10, 28, 16, tzinfo=HUNGARY_TZ)) is None
-
-
-def test_coordinator_advances_the_hour_and_notifies_entities():
-    from unittest.mock import MagicMock
-
-    from custom_components.hungaromet_weather_and_forecast.forecast import (
-        ForecastCoordinator,
-    )
-
-    coordinator = object.__new__(ForecastCoordinator)
-    coordinator.data = _data()
-    coordinator.async_update_listeners = MagicMock()
-
-    coordinator.async_advance_hour(datetime(2026, 10, 28, 15, 0, tzinfo=HUNGARY_TZ))
-
-    assert coordinator.data.current.temperature == 14.0
-    coordinator.async_update_listeners.assert_called_once()
-
-    # Nothing downloaded yet: nothing to move
-    coordinator.data = None
-    coordinator.async_update_listeners.reset_mock()
-    coordinator.async_advance_hour(datetime(2026, 10, 28, 16, 0, tzinfo=HUNGARY_TZ))
-    coordinator.async_update_listeners.assert_not_called()
 
 
 def test_hourly_forecast_starts_at_the_current_hour():
@@ -335,11 +298,7 @@ def test_new_download_without_rows_is_left_alone():
 
 
 def test_daily_forecast_starts_at_today_after_midnight():
-    """At 00:30 last evening's 19:00 row is still kept for the hours until 01:00."""
-    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
-        advance_to_now,
-    )
-
+    """At midnight last evening's 19:00 row is still kept for the hours until 01:00."""
     rows = (
         _at(28, 19, temperature=10),
         _at(29, 1, temperature=8),
@@ -348,8 +307,8 @@ def test_daily_forecast_starts_at_today_after_midnight():
     data = _download(*rows, now=datetime(2026, 10, 28, 23, 7, tzinfo=HUNGARY_TZ))
     assert [d.forecast_time.day for d in data.daily] == [28, 29]
 
-    # The hourly tick at midnight moves the daily forecast to the new day
-    advance_to_now(data, datetime(2026, 10, 29, 0, 0, tzinfo=HUNGARY_TZ))
+    # The download at midnight starts the daily forecast at the new day
+    data = _download(*rows, now=datetime(2026, 10, 29, 0, 0, tzinfo=HUNGARY_TZ))
 
     assert [d.forecast_time.day for d in data.daily] == [29]
     assert (data.daily[0].temperature_min, data.daily[0].temperature_max) == (6, 8)

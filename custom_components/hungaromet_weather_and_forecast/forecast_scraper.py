@@ -440,16 +440,6 @@ def current_period(hourly, periods, now: datetime) -> ForecastPeriod | None:
     )
 
 
-def advance_to_now(data: ForecastData, now: datetime) -> None:
-    """Point the forecast's current hour at `now`, without downloading again.
-
-    The daily forecast is worked out again too, so it starts at the new day
-    after midnight.
-    """
-    data.current = current_period(data.hourly, data.periods, now)
-    data.daily = aggregate_daily(data.periods, now)
-
-
 def find_current(periods: list[ForecastPeriod], now: datetime):
     """Return the first row at most 3 hours old, or the last row."""
     since = now - timedelta(hours=3)
