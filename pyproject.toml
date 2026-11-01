@@ -1,0 +1,12 @@
+# Settings of the test and check tools; the packages are in requirements.txt
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.coverage.run]
+source = ["custom_components/hungaromet_weather_and_forecast"]
+
+[tool.coverage.report]
+fail_under = 99
+show_missing = true
