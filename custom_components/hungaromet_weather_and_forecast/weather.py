@@ -119,6 +119,8 @@ class HungarometForecastWeather(  # pylint: disable=too-many-ancestors,abstract-
         if data is None:
             return None
         return {
+            # Home Assistant's weather entity has no current precipitation of its own
+            "precipitation": self._current.precipitation if self._current else None,
             "settlement": data.settlement,
             "issued": data.issued.isoformat() if data.issued else None,
         }

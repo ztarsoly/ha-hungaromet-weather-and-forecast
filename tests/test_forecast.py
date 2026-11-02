@@ -652,6 +652,7 @@ def test_weather_current_conditions(data):
     assert entity.wind_bearing == 12
     assert entity.cloud_coverage == 40
     assert entity.extra_state_attributes == {
+        "precipitation": 0.25,
         "settlement": "Debrecen",
         "issued": "2026-10-28T09:46:00+01:00",
     }
@@ -686,7 +687,11 @@ def test_weather_without_data():
     assert entity._async_forecast_daily() is None
     assert entity._async_forecast_hourly() is None
     empty = _weather(ForecastData(settlement="X"))
-    assert empty.extra_state_attributes == {"settlement": "X", "issued": None}
+    assert empty.extra_state_attributes == {
+        "precipitation": None,
+        "settlement": "X",
+        "issued": None,
+    }
 
 
 @pytest.mark.asyncio
