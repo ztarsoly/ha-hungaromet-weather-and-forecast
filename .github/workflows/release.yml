@@ -23,8 +23,11 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements_test.txt
 
-      - name: Run tests
-        run: pytest --cov=custom_components/hungaromet_weather_and_forecast --cov-report=term-missing
+      - name: Run pylint
+        run: pylint custom_components/hungaromet_weather_and_forecast/
+
+      - name: Run pytest with coverage
+        run: pytest --cov
 
       - name: Update manifest version
         run: |
@@ -33,12 +36,13 @@ jobs:
           sed -i "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" custom_components/hungaromet_weather_and_forecast/manifest.json
 
       - name: Create release zip
+        # Without the bytecode the tests compiled
         run: |
           cd custom_components
-          zip -r ../hungaromet_weather_and_forecast.zip hungaromet_weather_and_forecast
+          zip -r ../hungaromet_weather_and_forecast.zip hungaromet_weather_and_forecast -x "*/__pycache__/*"
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           files: hungaromet_weather_and_forecast.zip
         env:
