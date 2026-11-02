@@ -20,6 +20,7 @@ from .forecast import ForecastCoordinator, forecast_device_info, forecast_scope
 from .forecast_scraper import (
     CONDITION_STATES,
     WIND_DIRECTION_STATES,
+    WIND_STRENGTH_STATES,
     ForecastData,
     ForecastPeriod,
 )
@@ -64,6 +65,13 @@ FORECAST_SENSORS = (
         translation_key="forecast_wind_direction",
         device_class=SensorDeviceClass.ENUM,
         options=WIND_DIRECTION_STATES,
+    ),
+    # Worked out from the mean wind speed; met.hu gives no wind strength
+    SensorEntityDescription(
+        key="wind_strength",
+        translation_key="forecast_wind_strength",
+        device_class=SensorDeviceClass.ENUM,
+        options=WIND_STRENGTH_STATES,
     ),
     SensorEntityDescription(
         key="weather_condition",

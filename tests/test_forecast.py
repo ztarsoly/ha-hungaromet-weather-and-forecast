@@ -23,12 +23,15 @@ from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     CONDITION_STATES,
     HUNGARY_TZ,
     WIND_DIRECTION_STATES,
+    WIND_STRENGTH_STATES,
     ForecastData,
     ForecastPeriod,
     Settlement,
     aggregate_daily,
+    beaufort_force,
     condition_for,
     fetch_forecast,
+    forecast_to_dict,
     find_current,
     lookup_settlement,
     parse_page,
@@ -627,6 +630,44 @@ def test_enum_sensors_list_their_states():
     assert by_key["wind_bearing"].device_class == SensorDeviceClass.WIND_DIRECTION
     assert "exceptional" in CONDITION_STATES
     assert {"calm", "variable", "nne"} <= set(WIND_DIRECTION_STATES)
+
+
+@pytest.mark.parametrize(
+    ("speed", "strength"),
+    [
+        (0, "calm"),
+        (1.79, "calm"),
+        (1.8, "light_air"),  # 0.5 m/s
+        (11.87, "light_breeze"),
+        (11.88, "gentle_breeze"),  # 3.3 m/s
+        (28.43, "moderate_breeze"),
+        (28.44, "fresh_breeze"),  # 7.9 m/s
+        (61.55, "near_gale"),
+        (61.56, "gale"),  # 17.1 m/s
+        (117.35, "violent_storm"),
+        (117.36, "hurricane"),  # 32.6 m/s
+        (200, "hurricane"),
+    ],
+)
+def test_beaufort_force(speed, strength):
+    assert beaufort_force(speed) == strength
+
+
+def test_wind_strength_follows_the_mean_wind_speed():
+    assert ForecastPeriod(wind_speed=24).wind_strength == "moderate_breeze"
+    assert ForecastPeriod(wind_gust=60).wind_strength is None
+    assert "wind_strength" not in forecast_to_dict(
+        ForecastData(settlement="X", periods=[ForecastPeriod(wind_speed=24)])
+    )["periods"][0]
+
+
+def test_wind_strength_sensor(data):
+    sensor = _sensor("wind_strength", data)
+    assert sensor.native_value == "light_breeze"  # 7 km/h
+    assert sensor.entity_description.device_class == SensorDeviceClass.ENUM
+    assert sensor.entity_description.options == WIND_STRENGTH_STATES
+    values = [a["value"] for a in sensor.extra_state_attributes["forecast"]]
+    assert set(values) <= set(WIND_STRENGTH_STATES)
 
 
 def test_numeric_forecast_sensors_show_one_decimal():

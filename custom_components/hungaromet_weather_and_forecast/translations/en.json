@@ -85,15 +85,6 @@
       "stations": {
         "name": "Stations"
       },
-      "daily_latitude": {
-        "name": "Latitude"
-      },
-      "daily_longitude": {
-        "name": "Longitude"
-      },
-      "daily_elevation": {
-        "name": "Elevation"
-      },
       "daily_et5": {
         "name": "Mean soil temperature at 5 cm"
       },
@@ -167,7 +158,7 @@
         "name": "Maximum wind gust speed"
       },
       "daily_fxd": {
-        "name": "Maximum wind gust direction"
+        "name": "Maximum wind gust bearing"
       },
       "daily_fxdat": {
         "name": "Maximum wind gust time"
@@ -195,15 +186,6 @@
       },
       "daily_tviz": {
         "name": "Mean water temperature"
-      },
-      "hourly_latitude": {
-        "name": "Latitude"
-      },
-      "hourly_longitude": {
-        "name": "Longitude"
-      },
-      "hourly_elevation": {
-        "name": "Elevation"
       },
       "hourly_et5": {
         "name": "Soil temperature at 5 cm"
@@ -257,7 +239,7 @@
         "name": "Maximum wind gust speed"
       },
       "hourly_fxd": {
-        "name": "Maximum wind gust direction"
+        "name": "Maximum wind gust bearing"
       },
       "hourly_tsn": {
         "name": "Near-surface minimum temperature"
@@ -269,13 +251,13 @@
         "name": "Synoptic wind speed"
       },
       "hourly_fsd": {
-        "name": "Synoptic wind direction"
+        "name": "Synoptic wind bearing"
       },
       "hourly_f": {
         "name": "Mean wind speed"
       },
       "hourly_fd": {
-        "name": "Wind direction"
+        "name": "Mean wind bearing"
       },
       "hourly_we": {
         "name": "Weather code"
@@ -291,15 +273,6 @@
       },
       "hourly_fxdat": {
         "name": "Maximum wind gust time"
-      },
-      "ten_minutes_latitude": {
-        "name": "Latitude"
-      },
-      "ten_minutes_longitude": {
-        "name": "Longitude"
-      },
-      "ten_minutes_elevation": {
-        "name": "Elevation"
       },
       "ten_minutes_et5": {
         "name": "Soil temperature at 5 cm"
@@ -353,7 +326,7 @@
         "name": "Maximum wind gust speed"
       },
       "ten_minutes_fxd": {
-        "name": "Maximum wind gust direction"
+        "name": "Maximum wind gust bearing"
       },
       "ten_minutes_tsn": {
         "name": "Near-surface minimum temperature"
@@ -365,7 +338,7 @@
         "name": "Mean wind speed"
       },
       "ten_minutes_fsd": {
-        "name": "Wind direction"
+        "name": "Mean wind bearing"
       },
       "ten_minutes_v": {
         "name": "Visibility"
@@ -421,6 +394,24 @@
           "nnw": "NNW",
           "calm": "Calm",
           "variable": "Variable"
+        }
+      },
+      "forecast_wind_strength": {
+        "name": "Wind strength",
+        "state": {
+          "calm": "Calm",
+          "light_air": "Light air",
+          "light_breeze": "Light breeze",
+          "gentle_breeze": "Gentle breeze",
+          "moderate_breeze": "Moderate breeze",
+          "fresh_breeze": "Fresh breeze",
+          "strong_breeze": "Strong breeze",
+          "near_gale": "High wind / Moderate gale",
+          "gale": "Gale / Fresh gale",
+          "strong_gale": "Strong gale",
+          "storm": "Storm / Whole gale",
+          "violent_storm": "Violent storm",
+          "hurricane": "Hurricane force"
         }
       },
       "forecast_pressure": {

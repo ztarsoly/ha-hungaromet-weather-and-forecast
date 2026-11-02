@@ -112,7 +112,7 @@ Mindhárom eszköznek van egy **Állomások** érzékelője is. Az értéke a fe
 Az előrejelzés eszköz ezeket adja:
 
 - Az eszközről elnevezett **időjárás-entitást** napi (7 napos) és órás előrejelzéssel az időjárás-kártyákhoz
-- **Érzékelőket** az aktuális órára: hőmérséklet, csapadék, felhőzet, szélsebesség, széllökés, szélirány (fok és égtáj), légnyomás és időjárási helyzet
+- **Érzékelőket** az aktuális órára: hőmérséklet, csapadék, felhőzet, szélsebesség, széllökés, szélirány (fok és égtáj), szélerősség (Beaufort-skála, a szélsebességből számítva), légnyomás és időjárási helyzet
 - A **mai minimum- és maximumhőmérsékletet**, valamint az előrejelzés **kiadásának idejét**
 
 A met.hu 6 óránként (01, 07, 13 és 19 órakor) ad egy előrejelzési sort, amely az időpontjától kezdődő 6 órát írja le. A köztes órák számítottak: a hőmérséklet, a felhőzet, a szélsebesség, a széllökés, a légnyomás és a szélirány az egyik sortól a következőig egyenletesen változik (2 tizedesre kerekítve), az időjárási helyzet és a csapadék viszont a sor teljes időszakára vonatkozik, a csapadék egyenlően elosztva az órák között. Ezek számított értékek, nem külön előrejelzések. Az előrejelzés-érzékelők `forecast` attribútuma a met.hu eredeti 6 órás sorait tartalmazza.

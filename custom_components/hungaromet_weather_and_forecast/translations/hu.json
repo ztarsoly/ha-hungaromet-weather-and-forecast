@@ -85,15 +85,6 @@
       "stations": {
         "name": "Állomások"
       },
-      "daily_latitude": {
-        "name": "Földrajzi szélesség"
-      },
-      "daily_longitude": {
-        "name": "Földrajzi hosszúság"
-      },
-      "daily_elevation": {
-        "name": "Tengerszint feletti magasság"
-      },
       "daily_et5": {
         "name": "Átlagos 5 cm-es talajhőmérséklet"
       },
@@ -196,15 +187,6 @@
       "daily_tviz": {
         "name": "Átlagos vízhőmérséklet"
       },
-      "hourly_latitude": {
-        "name": "Földrajzi szélesség"
-      },
-      "hourly_longitude": {
-        "name": "Földrajzi hosszúság"
-      },
-      "hourly_elevation": {
-        "name": "Tengerszint feletti magasság"
-      },
       "hourly_et5": {
         "name": "Pillanatnyi 5 cm-es talajhőmérséklet"
       },
@@ -275,7 +257,7 @@
         "name": "Átlagos szélsebesség"
       },
       "hourly_fd": {
-        "name": "Szélirány"
+        "name": "Átlagos szélirány"
       },
       "hourly_we": {
         "name": "Pillanatnyi időkép kódja"
@@ -292,29 +274,20 @@
       "hourly_fxdat": {
         "name": "Maximális széllökés ideje"
       },
-      "ten_minutes_latitude": {
-        "name": "Földrajzi szélesség"
-      },
-      "ten_minutes_longitude": {
-        "name": "Földrajzi hosszúság"
-      },
-      "ten_minutes_elevation": {
-        "name": "Tengerszint feletti magasság"
-      },
       "ten_minutes_et5": {
-        "name": "5 cm-es talajhőmérséklet"
+        "name": "Pillanatnyi 5 cm-es talajhőmérséklet"
       },
       "ten_minutes_et10": {
-        "name": "10 cm-es talajhőmérséklet"
+        "name": "Pillanatnyi 10 cm-es talajhőmérséklet"
       },
       "ten_minutes_et20": {
-        "name": "20 cm-es talajhőmérséklet"
+        "name": "Pillanatnyi 20 cm-es talajhőmérséklet"
       },
       "ten_minutes_et50": {
-        "name": "50 cm-es talajhőmérséklet"
+        "name": "Pillanatnyi 50 cm-es talajhőmérséklet"
       },
       "ten_minutes_et100": {
-        "name": "100 cm-es talajhőmérséklet"
+        "name": "Pillanatnyi 100 cm-es talajhőmérséklet"
       },
       "ten_minutes_time": {
         "name": "Mérési időpont"
@@ -365,7 +338,7 @@
         "name": "Átlagos szélsebesség"
       },
       "ten_minutes_fsd": {
-        "name": "Szélirány"
+        "name": "Átlagos szélirány"
       },
       "ten_minutes_v": {
         "name": "Pillanatnyi látástávolság"
@@ -386,7 +359,7 @@
         "name": "Mai maximum hőmérséklet"
       },
       "forecast_precipitation": {
-        "name": "Csapadék"
+        "name": "Csapadékösszeg"
       },
       "forecast_cloud_cover": {
         "name": "Felhőzet"
@@ -421,6 +394,24 @@
           "nnw": "ÉÉNy",
           "calm": "Szélcsend",
           "variable": "Változó"
+        }
+      },
+      "forecast_wind_strength": {
+        "name": "Szélerősség",
+        "state": {
+          "calm": "Szélcsend",
+          "light_air": "Alig érezhető szél",
+          "light_breeze": "Könnyű szél",
+          "gentle_breeze": "Gyenge szél",
+          "moderate_breeze": "Mérsékelt szél",
+          "fresh_breeze": "Élénk szél",
+          "strong_breeze": "Erős szél",
+          "near_gale": "Igen erős szél",
+          "gale": "Viharos szél",
+          "strong_gale": "Heves vihar",
+          "storm": "Dühöngő vihar",
+          "violent_storm": "Heves szélvihar",
+          "hurricane": "Orkán"
         }
       },
       "forecast_pressure": {

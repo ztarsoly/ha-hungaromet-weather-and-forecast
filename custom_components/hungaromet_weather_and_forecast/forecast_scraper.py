@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import logging
 import re
+from bisect import bisect_right
 from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime, timedelta
@@ -71,6 +72,14 @@ CALM = "calm"
 VARIABLE = "variable"
 WIND_NAMES = {**dict(zip(COMPASS_NAMES, SIXTEEN_POINTS)), "szélcsend": CALM, "változó": VARIABLE}
 WIND_DIRECTION_STATES = [*SIXTEEN_POINTS, CALM, VARIABLE]
+# The Beaufort forces 0 to 12, and the mean wind speeds (m/s) where forces 1 to
+# 12 start
+WIND_STRENGTH_STATES = [
+    "calm", "light_air", "light_breeze", "gentle_breeze", "moderate_breeze",
+    "fresh_breeze", "strong_breeze", "near_gale", "gale", "strong_gale",
+    "storm", "violent_storm", "hurricane",
+]
+BEAUFORT_LIMITS = (0.5, 1.5, 3.3, 5.5, 7.9, 10.7, 13.8, 17.1, 20.7, 24.4, 28.4, 32.6)
 
 # Words of met.hu's weather descriptions and the Home Assistant condition they
 # mean, checked in this order, so that "havas eső" is not just rain and
@@ -130,6 +139,11 @@ class ForecastPeriod:  # pylint: disable=too-many-instance-attributes
     wind_bearing: float | None = None  # degrees
     wind_direction: str | None = None  # a WIND_DIRECTION_STATES key
     pressure: float | None = None  # hPa
+
+    @property
+    def wind_strength(self) -> str | None:
+        """The Beaufort force of the mean wind, a WIND_STRENGTH_STATES key."""
+        return None if self.wind_speed is None else beaufort_force(self.wind_speed)
 
 
 @dataclass
@@ -467,6 +481,11 @@ def _lerp_bearing(start: float | None, end: float | None, fraction: float):
 def bearing_to_direction(bearing: float) -> str:
     """Return the 16-point compass key for a bearing in degrees."""
     return SIXTEEN_POINTS[round(bearing / 22.5) % 16]
+
+
+def beaufort_force(speed: float) -> str:
+    """Return the WIND_STRENGTH_STATES key for a mean wind speed in km/h."""
+    return WIND_STRENGTH_STATES[bisect_right(BEAUFORT_LIMITS, speed / 3.6)]
 
 
 def _hour(start: ForecastPeriod, end: ForecastPeriod, step: int, steps: int):

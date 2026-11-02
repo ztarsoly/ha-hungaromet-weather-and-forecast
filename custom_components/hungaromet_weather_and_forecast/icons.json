@@ -4,15 +4,6 @@
       "stations": {
         "default": "mdi:map-marker-radius"
       },
-      "daily_latitude": {
-        "default": "mdi:latitude"
-      },
-      "daily_longitude": {
-        "default": "mdi:longitude"
-      },
-      "daily_elevation": {
-        "default": "mdi:elevation-rise"
-      },
       "daily_et5": {
         "default": "mdi:thermometer-lines"
       },
@@ -96,15 +87,6 @@
       },
       "daily_tviz": {
         "default": "mdi:thermometer-water"
-      },
-      "hourly_latitude": {
-        "default": "mdi:latitude"
-      },
-      "hourly_longitude": {
-        "default": "mdi:longitude"
-      },
-      "hourly_elevation": {
-        "default": "mdi:elevation-rise"
       },
       "hourly_et5": {
         "default": "mdi:thermometer-lines"
@@ -192,15 +174,6 @@
       },
       "hourly_fxdat": {
         "default": "mdi:clock-alert-outline"
-      },
-      "ten_minutes_latitude": {
-        "default": "mdi:latitude"
-      },
-      "ten_minutes_longitude": {
-        "default": "mdi:longitude"
-      },
-      "ten_minutes_elevation": {
-        "default": "mdi:elevation-rise"
       },
       "ten_minutes_et5": {
         "default": "mdi:thermometer-lines"
@@ -303,6 +276,9 @@
       },
       "forecast_wind_direction": {
         "default": "mdi:compass-rose"
+      },
+      "forecast_wind_strength": {
+        "default": "mdi:windsock"
       },
       "forecast_pressure": {
         "default": "mdi:gauge"

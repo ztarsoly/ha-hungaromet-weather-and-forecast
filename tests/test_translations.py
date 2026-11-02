@@ -8,8 +8,15 @@ import pandas as pd
 import pytest
 from PIL import Image
 
+from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
+    WIND_STRENGTH_STATES,
+)
+from custom_components.hungaromet_weather_and_forecast.forecast_sensor import (
+    FORECAST_SENSORS,
+)
 from custom_components.hungaromet_weather_and_forecast.station_sensor import (
     FEEDS,
+    MEASUREMENTS as STATION_MEASUREMENTS,
     Measurement,
     StationQuery,
     StationSensor,
@@ -58,6 +65,22 @@ def _all_stations_df():
     })
 
 
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_every_wind_strength_is_translated(language):
+    states = _load(language)["entity"]["sensor"]["forecast_wind_strength"]["state"]
+    assert list(states) == WIND_STRENGTH_STATES
+
+
+def test_only_created_sensors_are_translated():
+    """No sensor name is left over from a sensor that is no longer created."""
+    created = {"stations"} | {d.translation_key for d in FORECAST_SENSORS} | {
+        StationSensor(Mock(), FEEDS[feed], m, None, StationQuery()).translation_key
+        for feed, measurements in STATION_MEASUREMENTS.items()
+        for m in measurements
+    }
+    assert set(_load("en")["entity"]["sensor"]) == created
+
+
 def test_languages_have_the_same_keys():
     """Every language translates the same strings."""
     assert _key_paths(_load("hu")) == _key_paths(_load("en"))
@@ -73,7 +96,7 @@ def test_languages_have_the_same_keys():
     ],
 )
 def test_every_sensor_key_is_translated(language, process, feed):
-    """Each value a feed can produce has a translated sensor name."""
+    """Each value a feed's sensors show has a translated sensor name."""
     df = _all_stations_df()
     if process is process_daily_data:
         df["Time"] = [20240101]
@@ -87,7 +110,7 @@ def test_every_sensor_key_is_translated(language, process, feed):
 
     names = _load(language)["entity"]["sensor"]
     device = _load(language)["device"]
-    for key in data:
+    for key in data.keys() & {m.key for m in STATION_MEASUREMENTS[feed]}:
         sensor = StationSensor(hass, FEEDS[feed], Measurement(key, key), None, StationQuery())
         assert sensor.translation_key in names, sensor.translation_key
         assert sensor.device_info["translation_key"] in device
