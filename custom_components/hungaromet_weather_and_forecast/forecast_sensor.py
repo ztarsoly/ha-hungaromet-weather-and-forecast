@@ -37,6 +37,7 @@ def _measurement(key, unit, device_class=None):
         translation_key=f"forecast_{key}",
         native_unit_of_measurement=unit,
         device_class=device_class,
+        suggested_display_precision=1,
     )
 
 

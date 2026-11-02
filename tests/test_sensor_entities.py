@@ -155,6 +155,12 @@ def test_station_sensor_device_classes(key, unit, device_class):
         assert _sensor(feed, key, 1.0, unit).device_class == device_class
 
 
+def test_numeric_station_sensors_show_one_decimal():
+    assert _sensor().suggested_display_precision == 1
+    assert _sensor(key="fud", value="N", unit=None).suggested_display_precision is None
+    assert _sensor(key="time", value=None, unit=None).suggested_display_precision is None
+
+
 def test_reading_prefers_the_key_then_its_average():
     assert reading({"t": 1, "average_t": 2}, "t") == 1
     assert reading({"average_t": 2}, "t") == 2

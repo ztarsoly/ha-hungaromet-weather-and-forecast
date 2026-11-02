@@ -262,7 +262,7 @@ def _row(cells: dict[str, list[Tag]], day: date) -> ForecastPeriod:
         setattr(period, name, _number(_text(td)))
     period.precipitation = _first_number(cells, "R")
     cloud = _first_number(cells, "C")
-    period.cloud_cover = None if cloud is None else round(cloud)
+    period.cloud_cover = None if cloud is None else round(cloud, 2)
     speeds = [_number(_text(td)) for td in cells.get("Wf", [])]
     period.wind_speed, period.wind_gust = (speeds + [None, None])[:2]
     period.pressure = _first_number(cells, "P")
@@ -558,16 +558,16 @@ def _day_summary(rows: list[ForecastPeriod]) -> ForecastPeriod:
     return ForecastPeriod(
         forecast_time=rows[0].forecast_time.replace(hour=12, minute=0),
         temperature=(
-            round(sum(temperatures) / len(temperatures), 1) if temperatures else None
+            round(sum(temperatures) / len(temperatures), 2) if temperatures else None
         ),
         temperature_min=min(lows, default=None),
         temperature_max=max(highs, default=None),
         weather_condition=middle.weather_condition,
-        precipitation=round(sum(precipitation), 1) if precipitation else None,
+        precipitation=round(sum(precipitation), 2) if precipitation else None,
         cloud_cover=middle.cloud_cover,
         wind_speed=max(_values(rows, "wind_speed"), default=None),
         wind_gust=max(_values(rows, "wind_gust"), default=None),
         wind_bearing=middle.wind_bearing,
         wind_direction=middle.wind_direction,
-        pressure=round(sum(pressures) / len(pressures), 1) if pressures else None,
+        pressure=round(sum(pressures) / len(pressures), 2) if pressures else None,
     )

@@ -277,6 +277,11 @@ class StationSensor(FeedSensor):
         return self._measurement.unit
 
     @property
+    def suggested_display_precision(self) -> int | None:
+        # Only the numeric measurements have a unit
+        return 1 if self._measurement.unit else None
+
+    @property
     def native_value(self):
         if self._base_key == "time" and self._value:
             return self._time()

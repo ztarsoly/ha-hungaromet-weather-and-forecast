@@ -186,7 +186,7 @@ def test_daily_summary(data):
     today, tomorrow = data.daily
     assert today.forecast_time.hour == 12
     assert (today.temperature_min, today.temperature_max) == (-1, 21)
-    assert today.temperature == round((4 + 16 + 0) / 3, 1)
+    assert today.temperature == round((4 + 16 + 0) / 3, 2)
     assert today.precipitation == 4.5
     assert (today.wind_speed, today.wind_gust) == (8, 23)
     assert today.weather_condition == "pouring"  # the middle row
@@ -597,7 +597,7 @@ def test_forecast_sensor_attributes(data):
     assert attrs["settlement"] == "Debrecen"
     assert attrs["forecast_time"] == "2026-10-28T10:00:00+01:00"
     assert [a["value"] for a in attrs["forecast"]] == [4, 16, 0.0, 3]
-    assert attrs["daily_forecast"][0] == {"date": "2026-10-28", "value": 6.7}
+    assert attrs["daily_forecast"][0] == {"date": "2026-10-28", "value": 6.67}
     assert _sensor("issued", data).extra_state_attributes is None
 
 
@@ -627,6 +627,12 @@ def test_enum_sensors_list_their_states():
     assert by_key["wind_bearing"].device_class == SensorDeviceClass.WIND_DIRECTION
     assert "exceptional" in CONDITION_STATES
     assert {"calm", "variable", "nne"} <= set(WIND_DIRECTION_STATES)
+
+
+def test_numeric_forecast_sensors_show_one_decimal():
+    for description in FORECAST_SENSORS:
+        numeric = description.native_unit_of_measurement is not None
+        assert description.suggested_display_precision == (1 if numeric else None)
 
 
 def _weather(data):
