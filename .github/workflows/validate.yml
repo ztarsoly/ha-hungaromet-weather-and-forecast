@@ -1,4 +1,4 @@
-name: HACS Validation
+name: Validate
 permissions:
   contents: read
 
@@ -11,7 +11,8 @@ on:
     - cron: "0 0 * * *"
 
 jobs:
-  validate:
+  hacs:
+    name: HACS validation
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -22,3 +23,13 @@ jobs:
         with:
           category: integration
           ignore: brands
+
+  hassfest:
+    name: Hassfest validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Hassfest validation
+        uses: home-assistant/actions/hassfest@master
