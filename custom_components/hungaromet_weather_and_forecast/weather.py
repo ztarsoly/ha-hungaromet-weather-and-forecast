@@ -17,7 +17,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
 from .const import DOMAIN
 from .forecast import ForecastCoordinator, forecast_device_info, forecast_scope
-from .forecast_scraper import ForecastPeriod
+from .forecast_scraper import ForecastPeriod, ForecastValues
 from .scope import scoped_id
 
 
@@ -30,7 +30,7 @@ async def async_setup_entry(
         async_add_entities([HungarometForecastWeather(coordinator)])
 
 
-def _forecast(p: ForecastPeriod, daily: bool) -> Forecast:
+def _forecast(p: ForecastValues, daily: bool) -> Forecast:
     """Convert a period or a day's summary to Home Assistant's forecast format."""
     forecast: Forecast = {
         "datetime": p.forecast_time.isoformat(),
@@ -115,14 +115,11 @@ class HungarometForecastWeather(  # pylint: disable=too-many-ancestors,abstract-
 
     @property
     def extra_state_attributes(self):
-        data = self.coordinator.data
-        if data is None:
+        if self.coordinator.data is None:
             return None
         return {
             # Home Assistant's weather entity has no current precipitation of its own
             "precipitation": self._current.precipitation if self._current else None,
-            "settlement": data.settlement,
-            "issued": data.issued.isoformat() if data.issued else None,
         }
 
     @callback

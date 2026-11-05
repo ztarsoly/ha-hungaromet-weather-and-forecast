@@ -22,7 +22,7 @@ from .forecast_scraper import (
     WIND_DIRECTION_STATES,
     WIND_STRENGTH_STATES,
     ForecastData,
-    ForecastPeriod,
+    ForecastValues,
 )
 from .scope import scoped_id
 
@@ -87,7 +87,7 @@ FORECAST_SENSORS = (
 )
 
 
-def _today(data: ForecastData) -> ForecastPeriod | None:
+def _today(data: ForecastData) -> ForecastValues | None:
     """Return the daily summary for the current period's day."""
     if data.current is None or data.current.forecast_time is None:
         return None
@@ -99,11 +99,9 @@ def _today(data: ForecastData) -> ForecastPeriod | None:
 
 
 class ForecastSensor(CoordinatorEntity[ForecastCoordinator], SensorEntity):
-    """One value of the settlement forecast, with its upcoming values attached."""
+    """One value of the settlement forecast."""
 
     _attr_has_entity_name = True
-    # The forecast lists are long and change with every reissue
-    _unrecorded_attributes = frozenset({"forecast", "daily_forecast"})
     entity_description: SensorEntityDescription
 
     def __init__(
@@ -130,27 +128,6 @@ class ForecastSensor(CoordinatorEntity[ForecastCoordinator], SensorEntity):
             return data.issued
         source = _today(data) if key in DAILY_KEYS else data.current
         return getattr(source, key, None) if source else None
-
-    @property
-    def extra_state_attributes(self):
-        data = self.coordinator.data
-        key = self.entity_description.key
-        if data is None or key == "issued":
-            return None
-        attrs = {"settlement": data.settlement}
-        if data.current and data.current.forecast_time:
-            attrs["forecast_time"] = data.current.forecast_time.isoformat()
-        attrs["forecast"] = [
-            {"datetime": p.forecast_time.isoformat(), "value": getattr(p, key)}
-            for p in data.periods
-            if p.forecast_time and getattr(p, key) is not None
-        ]
-        attrs["daily_forecast"] = [
-            {"date": p.forecast_time.date().isoformat(), "value": getattr(p, key)}
-            for p in data.daily
-            if p.forecast_time and getattr(p, key) is not None
-        ]
-        return attrs
 
 
 def forecast_sensors(coordinator: ForecastCoordinator) -> list[ForecastSensor]:

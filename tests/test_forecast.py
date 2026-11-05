@@ -34,6 +34,7 @@ from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     forecast_to_dict,
     find_current,
     lookup_settlement,
+    mean_bearing,
     parse_page,
 )
 from custom_components.hungaromet_weather_and_forecast.forecast_sensor import (
@@ -193,7 +194,61 @@ def test_daily_summary(data):
     assert today.precipitation == 4.5
     assert (today.wind_speed, today.wind_gust) == (8, 23)
     assert today.weather_condition == "pouring"  # the middle row
+    assert today.cloud_cover == 40
+    assert today.wind_bearing == 12
+    assert not hasattr(today, "wind_direction")
     assert (tomorrow.temperature_min, tomorrow.temperature_max) == (3, 3)
+
+
+def _day_rows(*rows):
+    return [
+        ForecastPeriod(forecast_time=NOW.replace(hour=hour), **values)
+        for hour, values in zip((1, 7, 13, 19), rows)
+    ]
+
+
+def test_daily_cloud_cover_is_the_average():
+    rows = _day_rows(*({"cloud_cover": c} for c in (100, 80, 20, 0)))
+    assert aggregate_daily(rows)[0].cloud_cover == 50
+    # A row without cloud cover does not count
+    rows = _day_rows({"cloud_cover": 90}, {}, {"cloud_cover": 15})
+    assert aggregate_daily(rows)[0].cloud_cover == 52.5
+
+
+@pytest.mark.parametrize(
+    ("bearings", "expected"),
+    [
+        ([90], 90),
+        ([0, 90], 45),
+        ([350, 10], 0),  # around north, not 180
+        ([300, 340], 320),
+        ([90, 270], None),  # they cancel out
+        ([], None),
+    ],
+)
+def test_mean_bearing(bearings, expected):
+    assert mean_bearing(bearings) == expected
+
+
+def test_daily_wind_bearing_is_the_compass_average():
+    rows = _day_rows({"wind_bearing": 350}, {"wind_bearing": 10})
+    assert aggregate_daily(rows)[0].wind_bearing == 0
+
+
+def test_daily_wind_bearing_counts_calm_and_variable_rows():
+    rows = _day_rows(
+        {"wind_bearing": 0, "wind_direction": "n"},
+        {"wind_bearing": 90, "wind_direction": "calm"},
+        {"wind_bearing": 45, "wind_direction": "variable"},
+    )
+    assert aggregate_daily(rows)[0].wind_bearing == 45
+
+
+def test_daily_wind_bearing_without_a_direction():
+    # The bearings cancel out, or no row has one
+    rows = _day_rows({"wind_bearing": 90}, {"wind_bearing": 270})
+    assert aggregate_daily(rows)[0].wind_bearing is None
+    assert aggregate_daily(_day_rows({}, {}))[0].wind_bearing is None
 
 
 def test_daily_summary_tolerates_missing_values():
@@ -595,26 +650,16 @@ def test_forecast_sensor_values(data):
     assert _sensor("issued", data).native_value == data.issued
 
 
-def test_forecast_sensor_attributes(data):
-    attrs = _sensor("temperature", data).extra_state_attributes
-    assert attrs["settlement"] == "Debrecen"
-    assert attrs["forecast_time"] == "2026-10-28T10:00:00+01:00"
-    assert [a["value"] for a in attrs["forecast"]] == [4, 16, 0.0, 3]
-    assert attrs["daily_forecast"][0] == {"date": "2026-10-28", "value": 6.67}
-    assert _sensor("issued", data).extra_state_attributes is None
+def test_forecast_sensors_have_no_attributes_of_their_own(data):
+    for description in FORECAST_SENSORS:
+        assert _sensor(description.key, data).extra_state_attributes is None
 
 
 def test_forecast_sensor_without_data():
     assert _sensor("temperature", None).native_value is None
-    assert _sensor("temperature", None).extra_state_attributes is None
     empty = ForecastData(settlement="X")
     assert _sensor("temperature_min", empty).native_value is None
     assert _sensor("temperature", empty).native_value is None
-    assert _sensor("temperature", empty).extra_state_attributes == {
-        "settlement": "X",
-        "forecast": [],
-        "daily_forecast": [],
-    }
 
 
 def test_today_without_matching_day(data):
@@ -666,8 +711,6 @@ def test_wind_strength_sensor(data):
     assert sensor.native_value == "light_breeze"  # 7 km/h
     assert sensor.entity_description.device_class == SensorDeviceClass.ENUM
     assert sensor.entity_description.options == WIND_STRENGTH_STATES
-    values = [a["value"] for a in sensor.extra_state_attributes["forecast"]]
-    assert set(values) <= set(WIND_STRENGTH_STATES)
 
 
 def test_numeric_forecast_sensors_show_one_decimal():
@@ -698,11 +741,7 @@ def test_weather_current_conditions(data):
     assert entity.native_wind_gust_speed == 21.5
     assert entity.wind_bearing == 12
     assert entity.cloud_coverage == 40
-    assert entity.extra_state_attributes == {
-        "precipitation": 0.25,
-        "settlement": "Debrecen",
-        "issued": "2026-10-28T09:46:00+01:00",
-    }
+    assert entity.extra_state_attributes == {"precipitation": 0.25}
 
 
 def test_weather_forecasts(data):
@@ -734,11 +773,7 @@ def test_weather_without_data():
     assert entity._async_forecast_daily() is None
     assert entity._async_forecast_hourly() is None
     empty = _weather(ForecastData(settlement="X"))
-    assert empty.extra_state_attributes == {
-        "precipitation": None,
-        "settlement": "X",
-        "issued": None,
-    }
+    assert empty.extra_state_attributes == {"precipitation": None}
 
 
 @pytest.mark.asyncio

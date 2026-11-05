@@ -27,6 +27,7 @@ The issue time is in the page text: "HungaroMet: 2026. október 28. 09:46".
 from __future__ import annotations
 
 import logging
+import math
 import re
 from bisect import bisect_right
 from collections import defaultdict
@@ -121,8 +122,8 @@ class Settlement:
 
 
 @dataclass
-class ForecastPeriod:  # pylint: disable=too-many-instance-attributes
-    """The weather of one met.hu row, one interpolated hour or one day.
+class ForecastValues:  # pylint: disable=too-many-instance-attributes
+    """The weather of one day, and what a row or an hour has in common with it.
 
     One field for each forecast value, as stored and shown by the entities.
     """
@@ -137,13 +138,19 @@ class ForecastPeriod:  # pylint: disable=too-many-instance-attributes
     wind_speed: float | None = None  # km/h, mean
     wind_gust: float | None = None  # km/h
     wind_bearing: float | None = None  # degrees
-    wind_direction: str | None = None  # a WIND_DIRECTION_STATES key
     pressure: float | None = None  # hPa
 
     @property
     def wind_strength(self) -> str | None:
         """The Beaufort force of the mean wind, a WIND_STRENGTH_STATES key."""
         return None if self.wind_speed is None else beaufort_force(self.wind_speed)
+
+
+@dataclass
+class ForecastPeriod(ForecastValues):  # pylint: disable=too-many-instance-attributes
+    """The weather of one met.hu row or one interpolated hour."""
+
+    wind_direction: str | None = None  # a WIND_DIRECTION_STATES key
 
 
 @dataclass
@@ -155,7 +162,7 @@ class ForecastData:
     current: ForecastPeriod | None = None  # the current hour
     periods: list[ForecastPeriod] = field(default_factory=list)  # met.hu's rows
     hourly: list[ForecastPeriod] = field(default_factory=list)  # interpolated
-    daily: list[ForecastPeriod] = field(default_factory=list)
+    daily: list[ForecastValues] = field(default_factory=list)
 
 
 async def lookup_settlement(
@@ -483,6 +490,16 @@ def bearing_to_direction(bearing: float) -> str:
     return SIXTEEN_POINTS[round(bearing / 22.5) % 16]
 
 
+def mean_bearing(bearings: list[float]) -> float | None:
+    """Return the compass average of bearings; None when they cancel out."""
+    radians = [math.radians(bearing) for bearing in bearings]
+    east = sum(math.sin(r) for r in radians)
+    north = sum(math.cos(r) for r in radians)
+    if math.hypot(east, north) < 1e-9:
+        return None
+    return round(math.degrees(math.atan2(east, north)), 2) % 360
+
+
 def beaufort_force(speed: float) -> str:
     """Return the WIND_STRENGTH_STATES key for a mean wind speed in km/h."""
     return WIND_STRENGTH_STATES[bisect_right(BEAUFORT_LIMITS, speed / 3.6)]
@@ -547,7 +564,7 @@ def find_current_hour(hourly: list[ForecastPeriod], now: datetime):
 
 def aggregate_daily(
     periods: list[ForecastPeriod], now: datetime | None = None
-) -> list[ForecastPeriod]:
+) -> list[ForecastValues]:
     """Sum the rows up into one forecast for each calendar day from `now`'s day.
 
     Earlier days are left out: last evening's row is kept until 01:00 for the
@@ -565,16 +582,17 @@ def _values(rows: list[ForecastPeriod], name: str) -> list[float]:
     return [value for row in rows if (value := getattr(row, name)) is not None]
 
 
-def _day_summary(rows: list[ForecastPeriod]) -> ForecastPeriod:
-    """Summarise one day's rows; the middle row stands for its sky and wind."""
+def _day_summary(rows: list[ForecastPeriod]) -> ForecastValues:
+    """Summarise one day's rows; the middle row stands for its weather condition."""
     temperatures = _values(rows, "temperature")
     # met.hu's own minimum and maximum win over the 6-hour temperatures
     lows = _values(rows, "temperature_min") or temperatures
     highs = _values(rows, "temperature_max") or temperatures
     precipitation = _values(rows, "precipitation")
     pressures = _values(rows, "pressure")
+    clouds = _values(rows, "cloud_cover")
     middle = rows[len(rows) // 2]
-    return ForecastPeriod(
+    return ForecastValues(
         forecast_time=rows[0].forecast_time.replace(hour=12, minute=0),
         temperature=(
             round(sum(temperatures) / len(temperatures), 2) if temperatures else None
@@ -583,10 +601,9 @@ def _day_summary(rows: list[ForecastPeriod]) -> ForecastPeriod:
         temperature_max=max(highs, default=None),
         weather_condition=middle.weather_condition,
         precipitation=round(sum(precipitation), 2) if precipitation else None,
-        cloud_cover=middle.cloud_cover,
+        cloud_cover=round(sum(clouds) / len(clouds), 2) if clouds else None,
         wind_speed=max(_values(rows, "wind_speed"), default=None),
         wind_gust=max(_values(rows, "wind_gust"), default=None),
-        wind_bearing=middle.wind_bearing,
-        wind_direction=middle.wind_direction,
+        wind_bearing=mean_bearing(_values(rows, "wind_bearing")),
         pressure=round(sum(pressures) / len(pressures), 2) if pressures else None,
     )
