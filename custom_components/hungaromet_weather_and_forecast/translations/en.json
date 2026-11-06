@@ -391,9 +391,7 @@
           "w": "W",
           "wnw": "WNW",
           "nw": "NW",
-          "nnw": "NNW",
-          "calm": "Calm",
-          "variable": "Variable"
+          "nnw": "NNW"
         }
       },
       "forecast_wind_strength": {

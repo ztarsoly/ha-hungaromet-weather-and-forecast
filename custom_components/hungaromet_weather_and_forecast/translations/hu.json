@@ -391,9 +391,7 @@
           "w": "Ny",
           "wnw": "NyÉNy",
           "nw": "ÉNy",
-          "nnw": "ÉÉNy",
-          "calm": "Szélcsend",
-          "variable": "Változó"
+          "nnw": "ÉÉNy"
         }
       },
       "forecast_wind_strength": {

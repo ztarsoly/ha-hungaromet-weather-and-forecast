@@ -105,14 +105,14 @@ def test_bearing_to_direction_uses_16_points(bearing, direction):
 def test_missing_values_keep_the_start_value():
     hourly = interpolate_hourly(
         [
-            _at(28, 13, temperature=16, wind_bearing=None, wind_direction="calm"),
+            _at(28, 13, temperature=16, wind_bearing=None, wind_direction="nne"),
             _at(28, 19, temperature=None, wind_bearing=90),
         ]
     )
 
     assert {p.temperature for p in hourly[:6]} == {16}
     assert {p.wind_bearing for p in hourly[:6]} == {None}
-    assert {p.wind_direction for p in hourly[:6]} == {"calm"}
+    assert {p.wind_direction for p in hourly[:6]} == {"nne"}
     assert hourly[0].precipitation is None
 
 

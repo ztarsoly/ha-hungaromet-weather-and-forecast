@@ -96,7 +96,7 @@ PAGE = (
         _day("október", 28, 3),
     )
     + _forecast_row("13:00", 16, "w103", "zápor", "északi", 12, (6, 20), ("X", 21))
-    + _forecast_row("19:00", "-0", "w001e", "derült", "szélcsend", 12, (2, 9))
+    + _forecast_row("19:00", "-0", "w001e", "derült", "északi", 12, (2, 9))
     + "<tr><th>no data row</th></tr>"
     + _forecast_row(
         "01:00", 3, "w999", "furcsa idő", "furcsa", 12, (4, 12), day=_day("október", 29, 1)
@@ -143,7 +143,7 @@ def test_parse_page_conditions_and_wind(caplog):
     # The direction comes from the bearing on 16 points (met.hu says "északi"
     # for 12°, which is NNE); calm stays calm, and an unknown name still gets
     # a direction from its bearing
-    assert [p.wind_direction for p in data.periods] == ["nne", "nne", "calm", "nne"]
+    assert [p.wind_direction for p in data.periods] == ["nne", "nne", "nne", "nne"]
     assert "Unknown met.hu weather 'furcsa idő' (w999)" in caplog.text
     assert "Unknown met.hu wind direction furcsa" in caplog.text
 
@@ -192,7 +192,8 @@ def test_daily_summary(data):
     assert (today.temperature_min, today.temperature_max) == (-1, 21)
     assert today.temperature == round((4 + 16 + 0) / 3, 2)
     assert today.precipitation == 4.5
-    assert (today.wind_speed, today.wind_gust) == (8, 23)
+    assert today.wind_speed == round((8 + 6 + 2) / 3, 2)  # the average of the mean wind
+    assert today.wind_gust == 23  # the highest
     assert today.weather_condition == "pouring"  # the middle row
     assert today.cloud_cover == 40
     assert today.wind_bearing == 12
@@ -233,15 +234,6 @@ def test_mean_bearing(bearings, expected):
 def test_daily_wind_bearing_is_the_compass_average():
     rows = _day_rows({"wind_bearing": 350}, {"wind_bearing": 10})
     assert aggregate_daily(rows)[0].wind_bearing == 0
-
-
-def test_daily_wind_bearing_counts_calm_and_variable_rows():
-    rows = _day_rows(
-        {"wind_bearing": 0, "wind_direction": "n"},
-        {"wind_bearing": 90, "wind_direction": "calm"},
-        {"wind_bearing": 45, "wind_direction": "variable"},
-    )
-    assert aggregate_daily(rows)[0].wind_bearing == 45
 
 
 def test_daily_wind_bearing_without_a_direction():
@@ -674,7 +666,8 @@ def test_enum_sensors_list_their_states():
     assert by_key["wind_direction"].options == WIND_DIRECTION_STATES
     assert by_key["wind_bearing"].device_class == SensorDeviceClass.WIND_DIRECTION
     assert "exceptional" in CONDITION_STATES
-    assert {"calm", "variable", "nne"} <= set(WIND_DIRECTION_STATES)
+    assert len(WIND_DIRECTION_STATES) == 16
+    assert not {"calm", "variable"} & set(WIND_DIRECTION_STATES)
 
 
 @pytest.mark.parametrize(

@@ -69,10 +69,8 @@ COMPASS_NAMES = (
     "déli", "dél-délnyugati", "délnyugati", "nyugat-délnyugati",
     "nyugati", "nyugat-északnyugati", "északnyugati", "észak-északnyugati",
 )
-CALM = "calm"
-VARIABLE = "variable"
-WIND_NAMES = {**dict(zip(COMPASS_NAMES, SIXTEEN_POINTS)), "szélcsend": CALM, "változó": VARIABLE}
-WIND_DIRECTION_STATES = [*SIXTEEN_POINTS, CALM, VARIABLE]
+WIND_NAMES = dict(zip(COMPASS_NAMES, SIXTEEN_POINTS))
+WIND_DIRECTION_STATES = list(SIXTEEN_POINTS)
 # The Beaufort forces 0 to 12, and the mean wind speeds (m/s) where forces 1 to
 # 12 start
 WIND_STRENGTH_STATES = [
@@ -320,8 +318,7 @@ def _wind(cells: dict[str, list[Tag]]) -> tuple[float | None, str | None]:
     """Return the wind's bearing and its direction on the 16-point compass.
 
     met.hu's direction names are coarser (12° is "északi"), so the direction
-    comes from the bearing, like in the interpolated hours. Calm and variable
-    wind keep met.hu's word.
+    comes from the bearing, like in the interpolated hours.
     """
     tooltips = " ".join(
         td.get("onmouseover", "") for td in cells.get("Wikon", []) + cells.get("Wd", [])
@@ -332,7 +329,7 @@ def _wind(cells: dict[str, list[Tag]]) -> tuple[float | None, str | None]:
     direction = WIND_NAMES.get(name)
     if name and direction is None:
         _LOGGER.warning("Unknown met.hu wind direction %s", name)
-    if bearing is None or direction in (CALM, VARIABLE):
+    if bearing is None:
         return bearing, direction
     return bearing, bearing_to_direction(bearing)
 
@@ -591,6 +588,7 @@ def _day_summary(rows: list[ForecastPeriod]) -> ForecastValues:
     precipitation = _values(rows, "precipitation")
     pressures = _values(rows, "pressure")
     clouds = _values(rows, "cloud_cover")
+    speeds = _values(rows, "wind_speed")
     middle = rows[len(rows) // 2]
     return ForecastValues(
         forecast_time=rows[0].forecast_time.replace(hour=12, minute=0),
@@ -602,7 +600,7 @@ def _day_summary(rows: list[ForecastPeriod]) -> ForecastValues:
         weather_condition=middle.weather_condition,
         precipitation=round(sum(precipitation), 2) if precipitation else None,
         cloud_cover=round(sum(clouds) / len(clouds), 2) if clouds else None,
-        wind_speed=max(_values(rows, "wind_speed"), default=None),
+        wind_speed=round(sum(speeds) / len(speeds), 2) if speeds else None,
         wind_gust=max(_values(rows, "wind_gust"), default=None),
         wind_bearing=mean_bearing(_values(rows, "wind_bearing")),
         pressure=round(sum(pressures) / len(pressures), 2) if pressures else None,
