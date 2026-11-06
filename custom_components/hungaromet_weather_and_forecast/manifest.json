@@ -9,5 +9,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/ztarsoly/ha-hungaromet-weather-and-forecast/issues",
   "requirements": ["pandas", "beautifulsoup4"],
-  "version": "1.2.0"
+  "version": "1.2.1"
 }
