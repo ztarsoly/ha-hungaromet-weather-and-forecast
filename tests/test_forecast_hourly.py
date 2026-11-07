@@ -358,3 +358,75 @@ async def test_coordinator_keeps_the_dropped_row():
         data = await coordinator._async_update_data()
 
     assert data.current.forecast_time.hour == 17
+
+
+DEBRECEN_LOCATION = (47.543, 21.648)
+
+
+def _sun_day(month, day, conditions=("clear-night", "sunny", "sunny", "clear-night")):
+    """A day's rows at 01:00, 07:00, 13:00 and 19:00, and the next day's first."""
+    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
+        ForecastData,
+        _derive,
+    )
+
+    rows = [
+        ForecastPeriod(
+            forecast_time=datetime(2026, month, day, hour, tzinfo=HUNGARY_TZ),
+            weather_condition=condition,
+        )
+        for hour, condition in zip((1, 7, 13, 19), conditions)
+    ]
+    rows.append(
+        ForecastPeriod(
+            forecast_time=datetime(2026, month, day + 1, 1, tzinfo=HUNGARY_TZ),
+            weather_condition=conditions[0],
+        )
+    )
+    data = ForecastData(settlement="Debrecen", location=DEBRECEN_LOCATION, periods=rows)
+    _derive(data, rows[0].forecast_time)
+    return data
+
+
+def _conditions(data):
+    return {p.forecast_time.hour: p.weather_condition for p in data.hourly[:24]}
+
+
+def test_clear_hours_turn_to_night_when_the_sun_sets_before_the_night_row():
+    """In November the sun is down from about 16:05 to 06:30."""
+    conditions = _conditions(_sun_day(11, 8))
+
+    assert conditions[6] == "clear-night"
+    assert conditions[7] == "sunny"
+    assert conditions[16] == "sunny"
+    assert conditions[17] == "clear-night"
+    assert conditions[18] == "clear-night"
+
+
+def test_clear_hours_stay_sunny_when_the_sun_sets_after_the_night_row():
+    """In July the sun is up from about 05:00 to 20:30, past the night rows."""
+    conditions = _conditions(_sun_day(7, 1))
+
+    assert conditions[4] == "clear-night"
+    assert conditions[5] == "sunny"
+    assert conditions[19] == "sunny"
+    assert conditions[20] == "sunny"
+    assert conditions[21] == "clear-night"
+
+
+def test_only_clear_hours_follow_the_sun():
+    data = _sun_day(11, 8, ("fog", "partlycloudy", "rainy", "cloudy"))
+
+    conditions = _conditions(data)
+    assert conditions[5] == "fog"
+    assert conditions[17] == "rainy"
+    assert conditions[22] == "cloudy"
+
+
+def test_rows_keep_met_hus_condition():
+    """The rows are what is saved, and the daily forecast reads them."""
+    data = _sun_day(11, 8)
+
+    assert [p.weather_condition for p in data.periods[:4]] == [
+        "clear-night", "sunny", "sunny", "clear-night"
+    ]

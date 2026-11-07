@@ -35,6 +35,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import UTC, date, datetime, timedelta
 
 import aiohttp
+from astral import Observer
+from astral.sun import elevation
 from bs4 import BeautifulSoup, Tag
 from homeassistant.util import dt as dt_util
 
@@ -82,7 +84,8 @@ BEAUFORT_LIMITS = (0.5, 1.5, 3.3, 5.5, 7.9, 10.7, 13.8, 17.1, 20.7, 24.4, 28.4, 
 
 # Words of met.hu's weather descriptions and the Home Assistant condition they
 # mean, checked in this order, so that "havas eső" is not just rain and
-# "derült, párás" is haze. "Derült" (clear) turns into clear-night at night.
+# "derült, párás" is haze. "Derült" (clear) turns into clear-night at night; each
+# hour then follows the sun instead, see _follow_the_sun.
 CONDITION_WORDS = (
     ("zivatar", "lightning-rainy"),
     ("jégeső", "hail"),
@@ -156,6 +159,7 @@ class ForecastData:
     """A settlement's forecast and what is worked out from it."""
 
     settlement: str = ""
+    location: tuple[float, float] | None = None  # latitude, longitude
     issued: datetime | None = None
     current: ForecastPeriod | None = None  # the current hour
     periods: list[ForecastPeriod] = field(default_factory=list)  # met.hu's rows
@@ -214,10 +218,15 @@ async def fetch_forecast(
     ) as resp:
         resp.raise_for_status()
         html = await resp.text(encoding="utf-8", errors="replace")
-    return parse_page(html, settlement.name)
+    return parse_page(html, settlement.name, location=(settlement.lat, settlement.lon))
 
 
-def parse_page(html: str, settlement_name: str, now: datetime | None = None):
+def parse_page(
+    html: str,
+    settlement_name: str,
+    now: datetime | None = None,
+    location: tuple[float, float] | None = None,
+):
     """Read a forecast page; raise ValueError when it has no forecast rows."""
     now = now or dt_util.now()
     soup = BeautifulSoup(html, "html.parser")
@@ -227,6 +236,7 @@ def parse_page(html: str, settlement_name: str, now: datetime | None = None):
         raise ValueError(f"met.hu has no forecast table for {settlement_name}")
     data = ForecastData(
         settlement=settlement_name,
+        location=location,
         issued=_issue_time(soup.get_text(" ", strip=True)),
         periods=rows,
     )
@@ -379,8 +389,23 @@ def _issue_time(text: str) -> datetime | None:
 def _derive(data: ForecastData, now: datetime) -> None:
     """Work out the hourly values, current hour and daily summary from the rows."""
     data.hourly = interpolate_hourly(data.periods)
+    if data.location:
+        _follow_the_sun(data.hourly, data.location)
     data.current = current_period(data.hourly, data.periods, now)
     data.daily = aggregate_daily(data.periods, now)
+
+
+def _follow_the_sun(hours: list[ForecastPeriod], location: tuple[float, float]) -> None:
+    """Make the clear hours sunny or clear-night by the sun at the start of the hour.
+
+    met.hu only has a night symbol for its 19:00 and 01:00 rows, whenever the sun
+    really sets and rises.
+    """
+    observer = Observer(*location)
+    for hour in hours:
+        if hour.weather_condition in ("sunny", "clear-night"):
+            sun_is_up = elevation(observer, hour.forecast_time.astimezone(UTC)) > 0
+            hour.weather_condition = "sunny" if sun_is_up else "clear-night"
 
 
 def forecast_to_dict(data: ForecastData) -> dict:
@@ -398,7 +423,9 @@ def forecast_to_dict(data: ForecastData) -> dict:
     }
 
 
-def forecast_from_dict(stored: dict, now: datetime) -> ForecastData:
+def forecast_from_dict(
+    stored: dict, now: datetime, location: tuple[float, float] | None = None
+) -> ForecastData:
     """Rebuild a stored forecast, working out its hours for `now` again."""
 
     def period(values: dict) -> ForecastPeriod:
@@ -410,6 +437,7 @@ def forecast_from_dict(stored: dict, now: datetime) -> ForecastData:
     issued = stored.get("issued")
     data = ForecastData(
         settlement=stored["settlement"],
+        location=location,
         issued=datetime.fromisoformat(issued) if issued else None,
         periods=[period(p) for p in stored["periods"]],
     )

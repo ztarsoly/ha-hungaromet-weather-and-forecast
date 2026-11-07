@@ -141,7 +141,11 @@ class ForecastCoordinator(DataUpdateCoordinator[ForecastData]):
         if not stored or stored.get("kod") != self.settlement.kod:
             return
         try:
-            self.data = forecast_from_dict(stored["forecast"], dt_util.now())
+            self.data = forecast_from_dict(
+                stored["forecast"],
+                dt_util.now(),
+                (self.settlement.lat, self.settlement.lon),
+            )
         except (KeyError, TypeError, ValueError) as err:
             _LOGGER.warning("Ignoring the saved forecast, which is unreadable: %s", err)
 

@@ -92,6 +92,8 @@ async def test_load_stored_forecast():
 
     assert coordinator.data.settlement == "Debrecen"
     assert coordinator.data.current.forecast_time.hour == 17
+    # The 13:00 row is sunny, but the sun has set by 17:00 at the settlement
+    assert coordinator.data.current.weather_condition == "clear-night"
 
 
 @pytest.mark.asyncio

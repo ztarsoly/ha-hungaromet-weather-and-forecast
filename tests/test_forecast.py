@@ -378,6 +378,7 @@ async def test_fetch_forecast_posts_the_settlement():
         "c": "tablazat",
     }
     assert len(data.periods) == 4
+    assert data.location == (47.543, 21.648)
 
 
 def test_stored_settlement_prefers_options():
