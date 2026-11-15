@@ -77,10 +77,10 @@ def test_frame_time_reads_met_hu_jpg_names():
     assert frame_time("https://www.met.hu/img/RccH/RccH20261028_1150.jpg").hour == 11
 
 
-def test_latest_frame_urls_default_to_five():
+def test_latest_frame_urls_default_to_six():
     with patch.object(rr.requests, "get", return_value=MagicMock(text=PAGE)):
         urls = rr.latest_frame_urls("ne")
-    assert [u[-8:-4] for u in urls] == ["1135", "1140", "1145", "1150", "1155"]
+    assert [u[-8:-4] for u in urls] == ["1130", "1135", "1140", "1145", "1150", "1155"]
 
 
 def test_latest_frame_urls():

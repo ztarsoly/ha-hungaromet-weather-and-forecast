@@ -121,7 +121,7 @@ A met.hu a sorokat 4 órával az időpontjuk után leveszi az oldalról. Az inte
 
 ### Radarképek
 
-Mindkét radarkép a legutóbbi 5 képkocka (25 perc) animációja: képkockánként 1 másodperc, az utolsón 2 másodperc. Minden frissítéskor csak az új képkocka töltődik le, a legrégebbi kiesik. Az animáció csak a memóriában van, a lemezre nem kerül.
+Mindkét radarkép a legutóbbi 6 képkocka (30 perc) animációja: képkockánként 1 másodperc, az utolsón 2 másodperc. Minden frissítéskor csak az új képkocka töltődik le, a legrégebbi kiesik. Az animáció csak a memóriában van, a lemezre nem kerül.
 
 ## Frissítés
 

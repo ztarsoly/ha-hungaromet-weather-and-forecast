@@ -219,7 +219,7 @@ def test_create_gif_success():
 
 
 def test_animation_timing():
-    """5 frames by default: 1 s each, and 2 s on the newest one."""
+    """1 s on each frame, and 2 s on the newest one."""
     colors = ["red", "green", "blue", "yellow", "white"]
 
     gif = create_gif([Image.new("RGB", (10, 10), color=c) for c in colors])
@@ -228,13 +228,13 @@ def test_animation_timing():
 
 
 @patch("custom_components.hungaromet_weather_and_forecast.national_radar.requests.get")
-def test_newest_five_frames_by_default(mock_get):
+def test_newest_six_frames_by_default(mock_get):
     links = "".join(f'<a href="f_20261030_10{m:02d}.png">x</a>' for m in range(0, 40, 5))
     mock_get.return_value = Mock(text=links)
 
     urls = get_latest_image_urls("http://x/")
 
-    assert [u[-8:-4] for u in urls] == ["1015", "1020", "1025", "1030", "1035"]
+    assert [u[-8:-4] for u in urls] == ["1010", "1015", "1020", "1025", "1030", "1035"]
 
 
 def test_create_gif_empty_images_list():

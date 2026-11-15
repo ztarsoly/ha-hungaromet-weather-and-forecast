@@ -27,9 +27,9 @@ REQUEST_TIMEOUT = 10
 # met.hu's radar page, the radar devices' "Visit" link
 RADAR_WEB_PAGE = "https://www.met.hu/idojaras/aktualis_idojaras/radar/"
 
-# Both radar animations: the newest 5 frames (25 minutes), 1 s each, and the
+# Both radar animations: the newest 6 frames (30 minutes), 1 s each, and the
 # newest frame held for 2 s before the loop starts again
-FRAME_COUNT = 5
+FRAME_COUNT = 6
 FRAME_DURATION_MS = 1000
 END_DELAY_MS = 2000
 
