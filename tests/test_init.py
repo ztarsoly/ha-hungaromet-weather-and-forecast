@@ -39,6 +39,7 @@ def forecast_setup():
     """Replace the forecast setup with a stub returning a fake coordinator."""
     coordinator = MagicMock()
     coordinator.schedule.async_run_now = AsyncMock()
+    coordinator.warnings.schedule.async_run_now = AsyncMock()
     with patch(
         "custom_components.hungaromet_weather_and_forecast.async_setup_forecast",
         AsyncMock(return_value=coordinator),
@@ -64,8 +65,9 @@ async def test_async_setup_entry(forecast_setup):
     hass.config_entries.async_forward_entry_setups.assert_awaited_once_with(
         entry, ["sensor", "image", "weather"]
     )
-    # The first forecast download comes once the entities are added
+    # The first forecast and warnings downloads come once the entities are added
     coordinator.schedule.async_run_now.assert_awaited_once()
+    coordinator.warnings.schedule.async_run_now.assert_awaited_once()
 
 
 @pytest.mark.asyncio

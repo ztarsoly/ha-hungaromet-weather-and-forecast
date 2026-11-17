@@ -288,6 +288,18 @@
       },
       "forecast_issued": {
         "default": "mdi:clock-outline"
+      },
+      "forecast_alert": {
+        "default": "mdi:alert",
+        "state": {
+          "none": "mdi:alert-outline"
+        }
+      },
+      "forecast_warning": {
+        "default": "mdi:alert",
+        "state": {
+          "none": "mdi:alert-outline"
+        }
       }
     }
   },

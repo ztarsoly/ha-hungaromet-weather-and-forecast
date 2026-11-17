@@ -4,13 +4,17 @@ import logging
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timedelta
 from functools import partial
+from typing import TypeVar
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later, async_track_utc_time_change
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
+
+_DataT = TypeVar("_DataT")
 
 
 class RetryingSchedule:
@@ -91,3 +95,22 @@ class RetryingSchedule:
         self._unsub_retry = async_call_later(
             self._hass, self._retry_delay, partial(self._async_attempt, scheduled_for)
         )
+
+
+class ScheduledCoordinator(DataUpdateCoordinator[_DataT]):
+    """A coordinator refreshed by a RetryingSchedule and the update service."""
+
+    async def _async_scheduled_download(self, _scheduled_for=None) -> bool:
+        """Download the data; return False to have it retried.
+
+        Nothing is downloaded while no enabled entity shows the data, e.g.
+        when the Forecast device is disabled.
+        """
+        if not self._listeners:
+            return True
+        await self.async_refresh()
+        return self.last_update_success
+
+    async def async_update_now(self) -> None:
+        """Download the data for the update service."""
+        await self._async_scheduled_download()

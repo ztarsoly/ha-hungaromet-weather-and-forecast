@@ -434,6 +434,34 @@
       },
       "forecast_issued": {
         "name": "Kiadva"
+      },
+      "forecast_alert": {
+        "name": "Riasztás 3 órán belül",
+        "state": {
+          "none": "Nincs riasztás",
+          "yellow": "Sárga riasztás",
+          "orange": "Narancs riasztás",
+          "red": "Piros riasztás"
+        },
+        "state_attributes": {
+          "alerts": {
+            "name": "Riasztások"
+          }
+        }
+      },
+      "forecast_warning": {
+        "name": "Figyelmeztetés ma",
+        "state": {
+          "none": "Nincs figyelmeztetés",
+          "yellow": "Sárga figyelmeztetés",
+          "orange": "Narancs figyelmeztetés",
+          "red": "Piros figyelmeztetés"
+        },
+        "state_attributes": {
+          "warnings": {
+            "name": "Figyelmeztetések"
+          }
+        }
       }
     }
   },

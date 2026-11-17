@@ -145,7 +145,7 @@ def test_store_is_per_entry():
 def test_coordinator_creates_its_store():
     entry = SimpleNamespace(entry_id="e1")
     with (
-        patch.object(forecast.DataUpdateCoordinator, "__init__", return_value=None),
+        patch.object(forecast.ScheduledCoordinator, "__init__", return_value=None),
         patch.object(forecast, "forecast_store") as store,
     ):
         coordinator = forecast.ForecastCoordinator("hass", entry, DEBRECEN)

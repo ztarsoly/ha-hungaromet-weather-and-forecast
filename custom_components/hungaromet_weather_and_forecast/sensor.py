@@ -21,6 +21,7 @@ from .station_sensor import (
     reading,
 )
 from .updaters import async_register_updater
+from .warning_sensor import warning_sensors
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -130,7 +131,9 @@ async def async_setup_entry(
     """Add an entry's forecast sensors and weather station sensors."""
     # Forecast sensors first, so they do not depend on the station data loading
     if forecast := hass.data.get(DOMAIN, {}).get(entry.entry_id):
-        async_add_entities(forecast_sensors(forecast))
+        async_add_entities(
+            [*forecast_sensors(forecast), *warning_sensors(forecast.warnings)]
+        )
 
     query = StationQuery(
         distance_km=entry.options.get(

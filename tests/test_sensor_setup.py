@@ -102,11 +102,16 @@ async def test_setup_uses_the_entry_settings():
 @pytest.mark.asyncio
 async def test_setup_adds_the_forecast_sensors_first():
     hass = _hass(forecast=MagicMock())
-    with patch.object(sensor, "forecast_sensors", return_value=["forecast"]) as make:
+    forecast = hass.data["hungaromet_weather_and_forecast"]["e1"]
+    with (
+        patch.object(sensor, "forecast_sensors", return_value=["forecast"]) as make,
+        patch.object(sensor, "warning_sensors", return_value=["warning"]) as warnings,
+    ):
         added, _, _ = await _set_up(hass, _entry())
 
-    make.assert_called_once_with(hass.data["hungaromet_weather_and_forecast"]["e1"])
-    assert added[0] == (["forecast"], ())
+    make.assert_called_once_with(forecast)
+    warnings.assert_called_once_with(forecast.warnings)
+    assert added[0] == (["forecast", "warning"], ())
     assert len(added) == 2
 
 

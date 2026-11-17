@@ -9,7 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.helpers.update_coordinator import UpdateFailed
 from homeassistant.util import dt as dt_util
 
 from .const import (
@@ -29,9 +29,10 @@ from .forecast_scraper import (
     keep_dropped_row,
     lookup_settlement,
 )
-from .scheduler import RetryingSchedule
+from .scheduler import RetryingSchedule, ScheduledCoordinator
 from .scope import EntryScope, device_info
 from .updaters import async_register_updater
+from .warning import WarningCoordinator, async_setup_warnings
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -107,7 +108,7 @@ def forecast_device_info(scope: EntryScope) -> dict:
     return info
 
 
-class ForecastCoordinator(DataUpdateCoordinator[ForecastData]):
+class ForecastCoordinator(ScheduledCoordinator[ForecastData]):
     """Hold the latest forecast; refreshed by a schedule, never polled."""
 
     def __init__(
@@ -121,6 +122,8 @@ class ForecastCoordinator(DataUpdateCoordinator[ForecastData]):
             update_interval=None,
         )
         self.settlement = settlement
+        # The settlement's alerts and warnings, set up with the forecast
+        self.warnings: WarningCoordinator | None = None
         self._store = forecast_store(hass, entry.entry_id)
         self.schedule = RetryingSchedule(
             hass,
@@ -149,21 +152,6 @@ class ForecastCoordinator(DataUpdateCoordinator[ForecastData]):
         except (KeyError, TypeError, ValueError) as err:
             _LOGGER.warning("Ignoring the saved forecast, which is unreadable: %s", err)
 
-    async def _async_scheduled_download(self, _scheduled_for=None) -> bool:
-        """Download the forecast; return False to have it retried.
-
-        Nothing is downloaded while no enabled entity shows the forecast, e.g.
-        when the Forecast device is disabled.
-        """
-        if not self._listeners:
-            return True
-        await self.async_refresh()
-        return self.last_update_success
-
-    async def async_update_now(self) -> None:
-        """Download the forecast for the update service."""
-        await self._async_scheduled_download()
-
     async def _async_update_data(self) -> ForecastData:
         session = async_get_clientsession(self.hass)
         try:
@@ -182,7 +170,7 @@ class ForecastCoordinator(DataUpdateCoordinator[ForecastData]):
 async def async_setup_forecast(
     hass: HomeAssistant, entry: ConfigEntry
 ) -> ForecastCoordinator | None:
-    """Create and schedule the forecast coordinator if a settlement is set.
+    """Create and schedule the forecast and warning coordinators if a settlement is set.
 
     The first download is left to the caller, once the entities are added:
     without them it would be skipped.
@@ -199,4 +187,5 @@ async def async_setup_forecast(
             hass, f"{entry.entry_id}_forecast", coordinator.async_update_now
         )
     )
+    coordinator.warnings = async_setup_warnings(hass, entry, settlement)
     return coordinator

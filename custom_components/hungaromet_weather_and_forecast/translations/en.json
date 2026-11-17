@@ -362,7 +362,7 @@
         "name": "Precipitation"
       },
       "forecast_cloud_cover": {
-        "name": "Cloud cover"
+        "name": "Cloud coverage"
       },
       "forecast_wind_speed": {
         "name": "Wind speed"
@@ -434,6 +434,34 @@
       },
       "forecast_issued": {
         "name": "Issued"
+      },
+      "forecast_alert": {
+        "name": "Alert in 3 hours",
+        "state": {
+          "none": "No alert",
+          "yellow": "Yellow alert",
+          "orange": "Orange alert",
+          "red": "Red alert"
+        },
+        "state_attributes": {
+          "alerts": {
+            "name": "Alerts"
+          }
+        }
+      },
+      "forecast_warning": {
+        "name": "Warning today",
+        "state": {
+          "none": "No warning",
+          "yellow": "Yellow warning",
+          "orange": "Orange warning",
+          "red": "Red warning"
+        },
+        "state_attributes": {
+          "warnings": {
+            "name": "Warnings"
+          }
+        }
       }
     }
   },

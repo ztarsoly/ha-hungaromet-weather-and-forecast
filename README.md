@@ -9,7 +9,7 @@ Ez az egyéni Home Assistant integráció a HungaroMet Magyar Meteorológiai Szo
 
 - **Mért időjárás**: a helyszínhez közeli állomások napi, órás és 10 perces mérései (hőmérséklet, csapadék, légnyomás, szél, páratartalom, sugárzás, talajhőmérséklet és más adatok), a kiválasztott állomások átlagaként
 - **Állomások**: mely állomások mérései adják az értékeket
-- **Előrejelzés**: időjárás-entitás 7 napos és órás előrejelzéssel egy magyarországi településre, valamint előrejelzés-érzékelők
+- **Előrejelzés**: időjárás-entitás 7 napos és órás előrejelzéssel egy magyarországi településre, valamint előrejelzés-érzékelők, riasztás és figyelmeztetés
 - **Radarképek**: animált országos radarkép, és helyszínenként a környék regionális radarképe
 - **Több helyszín**: az integráció többször is hozzáadható, mindegyik helyszín saját eszközökkel
 
@@ -114,6 +114,34 @@ Az előrejelzés eszköz ezeket adja:
 - Az eszközről elnevezett **időjárás-entitást** napi (7 napos) és órás előrejelzéssel az időjárás-kártyákhoz
 - **Érzékelőket** az aktuális órára: hőmérséklet, csapadék, felhőzet, szélsebesség, széllökés, szélirány (fok és égtáj), szélerősség (Beaufort-skála, a szélsebességből számítva), légnyomás és időjárási helyzet
 - A **mai minimum- és maximumhőmérsékletet**, valamint az előrejelzés **kiadásának idejét**
+- A **Riasztás 3 órán belül** és a **Figyelmeztetés ma** érzékelőt a HungaroMet veszélyjelzéséből
+
+A **Riasztás 3 órán belül** érzékelő a település járására érvényben lévő riasztást, a **Figyelmeztetés ma** érzékelő a település megyéjére a mai napra kiadott figyelmeztetést mutatja. Az értékük a legmagasabb érvényben lévő fokozat: *Nincs*, *Sárga*, *Narancs* vagy *Piros* (pl. *Sárga riasztás*). Az `alerts`, illetve a `warnings` attribútumuk az érvényben lévő jelenségek listája, a legmagasabb fokozattal kezdve; ha nincs érvényben semmi, a lista üres. Minden elemnek három adata van: `label` (a jelenség neve a Home Assistant nyelvén: magyarul, ha az magyar, egyébként angolul), `type` (a jelenség nyelvtől független kulcsa) és `level` (`yellow`, `orange` vagy `red`). Például:
+
+```yaml
+warnings:
+  - label: Széllökés
+    type: wind_gust
+    level: orange
+  - label: Zivatar
+    type: thunderstorm
+    level: yellow
+```
+
+| Jelenség | `type` | Riasztás | Figyelmeztetés |
+|---|---|---|---|
+| Zivatar | `thunderstorm` | ✓ | ✓ |
+| Széllökés | `wind_gust` | ✓ | ✓ |
+| Felhőszakadás | `cloudburst` | ✓ | ✓ |
+| Ónos eső | `freezing_rain` | ✓ | ✓ |
+| Hófúvás | `snowdrift` | ✓ | ✓ |
+| Eső | `rain` | | ✓ |
+| Havazás | `snowfall` | | ✓ |
+| Tartós, sűrű köd | `fog` | | ✓ |
+| Extrém hideg | `extreme_cold` | | ✓ |
+| Magas középhőmérséklet | `high_mean_temperature` | | ✓ |
+
+A járást a település koordinátái alapján az integráció a met.hu veszélyjelzési térképének járáshatáraiból határozza meg (a térkép adatai az integrációban vannak); Budapest a Pest megyei figyelmeztetést kapja.
 
 A met.hu 6 óránként (01, 07, 13 és 19 órakor) ad egy előrejelzési sort, amely az időpontjától kezdődő 6 órát írja le. A köztes órák számítottak: a hőmérséklet, a felhőzet, a szélsebesség, a széllökés, a légnyomás és a szélirány az egyik sortól a következőig egyenletesen változik (2 tizedesre kerekítve), az időjárási helyzet és a csapadék viszont a sor teljes időszakára vonatkozik, a csapadék egyenlően elosztva az órák között. Ezek számított értékek, nem külön előrejelzések.
 
@@ -133,12 +161,13 @@ Az időpontok UTC szerintiek (télen a magyar idő UTC+1, nyáron UTC+2).
 | Órás időjárás | Óránként, xx:20:59-kor | 10 percenként újra |
 | 10 perces időjárás | 10 percenként, xx:x0:59-kor | percenként újra |
 | Előrejelzés | Óránként, xx:00:00-kor | 10 percenként újra |
+| Riasztás és figyelmeztetés | Óránként, xx:00:00-kor | 10 percenként újra |
 | Radarképek | 5 percenként, xx:x0:59-kor és xx:x5:59-kor | percenként újra |
 
 Az újrapróbálkozás legfeljebb a következő ütemezett frissítésig tart. Ezen felül:
 
 - Indításkor és a bejegyzés újratöltésekor minden azonnal frissül.
-- A `hungaromet_weather_and_forecast.update` szolgáltatás azonnal frissít mindent: minden bejegyzés időjárás-érzékelőit és előrejelzését, valamint a regionális és az országos radarképet. Egy-egy entitás a Home Assistant `homeassistant.update_entity` szolgáltatásával is frissíthető.
+- A `hungaromet_weather_and_forecast.update` szolgáltatás azonnal frissít mindent: minden bejegyzés időjárás-érzékelőit, előrejelzését, riasztását és figyelmeztetését, valamint a regionális és az országos radarképet. Egy-egy entitás a Home Assistant `homeassistant.update_entity` szolgáltatásával is frissíthető.
 - A letiltott entitások adatai nem töltődnek le.
 - Ha a bejegyzés rendszerbeállításaiban kikapcsolja a frissítések lekérdezését (*Enable polling for updates*), az ütemezett frissítések elmaradnak; a fenti szolgáltatások ilyenkor is működnek.
 
@@ -150,8 +179,9 @@ Az újrapróbálkozás legfeljebb a következő ütemezett frissítésig tart. E
 | Országos radarkép | [odp.met.hu radar-kompozit](https://odp.met.hu/weather/radar/composite/png/refl2D_pscappi/) (PNG) |
 | Regionális radarkép | A met.hu [radaroldala](https://www.met.hu/idojaras/aktualis_idojaras/radar/) (a negyedek csapadékintenzitás-képei) |
 | Előrejelzés | A met.hu [települési előrejelzése](https://www.met.hu/idojaras/elorejelzes/magyarorszagi_telepulesek/) |
+| Riasztás és figyelmeztetés | A met.hu [veszélyjelzése](https://www.met.hu/idojaras/veszelyjelzes/) |
 
-A regionális radarkép és az előrejelzés a met.hu nyilvános weboldalairól származik, így az oldalak változása elronthatja őket.
+A regionális radarkép, az előrejelzés, a riasztás és a figyelmeztetés a met.hu nyilvános weboldalairól származik, így az oldalak változása elronthatja őket.
 
 ## Tárolt adatok
 

@@ -119,6 +119,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # Now that its entities are added; a failed download is retried, and
         # must not stop the weather station sensors from loading
         await forecast.schedule.async_run_now()
+        await forecast.warnings.schedule.async_run_now()
     hass.data.setdefault(ENTRY_NAMES, {})[entry.entry_id] = entry.title
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     _async_ensure_radar_entry(hass)

@@ -516,7 +516,7 @@ async def test_coordinator_update_failure(error):
 def test_coordinator_init():
     hass = MagicMock()
     entry = MagicMock()
-    with patch.object(forecast.DataUpdateCoordinator, "__init__", return_value=None) as init:
+    with patch.object(forecast.ScheduledCoordinator, "__init__", return_value=None) as init:
         coordinator = forecast.ForecastCoordinator(hass, entry, DEBRECEN)
     assert coordinator.settlement == DEBRECEN
     assert init.call_args.kwargs["update_interval"] is None
@@ -539,7 +539,10 @@ async def test_setup_forecast_schedules_refreshes():
     hass = MagicMock(data={})
     coordinator = MagicMock(async_load_stored=AsyncMock())
     schedule = coordinator.schedule
-    with patch.object(forecast, "ForecastCoordinator", return_value=coordinator):
+    with (
+        patch.object(forecast, "ForecastCoordinator", return_value=coordinator),
+        patch.object(forecast, "async_setup_warnings") as setup_warnings,
+    ):
         assert await forecast.async_setup_forecast(hass, entry) is coordinator
 
     unloads = [c.args[0] for c in entry.async_on_unload.call_args_list]
@@ -554,12 +557,15 @@ async def test_setup_forecast_schedules_refreshes():
     schedule.async_run_now.assert_not_called()
     # The forecast saved before a restart is loaded first
     coordinator.async_load_stored.assert_awaited_once()
+    # The settlement's alerts and warnings come with the forecast
+    setup_warnings.assert_called_once_with(hass, entry, DEBRECEN)
+    assert coordinator.warnings is setup_warnings.return_value
 
 
 def test_coordinator_schedule():
     entry = SimpleNamespace(entry_id="e1")
     with (
-        patch.object(forecast.DataUpdateCoordinator, "__init__", return_value=None),
+        patch.object(forecast.ScheduledCoordinator, "__init__", return_value=None),
         patch.object(forecast, "forecast_store"),
         patch.object(forecast, "RetryingSchedule") as cls,
     ):

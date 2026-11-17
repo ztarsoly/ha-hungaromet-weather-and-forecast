@@ -14,6 +14,12 @@ from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
 from custom_components.hungaromet_weather_and_forecast.forecast_sensor import (
     FORECAST_SENSORS,
 )
+from custom_components.hungaromet_weather_and_forecast.warning_scraper import (
+    LEVEL_STATES,
+)
+from custom_components.hungaromet_weather_and_forecast.warning_sensor import (
+    WARNING_SENSORS,
+)
 from custom_components.hungaromet_weather_and_forecast.station_sensor import (
     FEEDS,
     MEASUREMENTS as STATION_MEASUREMENTS,
@@ -71,9 +77,19 @@ def test_every_wind_strength_is_translated(language):
     assert list(states) == WIND_STRENGTH_STATES
 
 
+@pytest.mark.parametrize("language", LANGUAGES)
+@pytest.mark.parametrize("description", WARNING_SENSORS, ids=lambda d: d.key)
+def test_every_warning_level_is_translated(language, description):
+    sensor = _load(language)["entity"]["sensor"][description.translation_key]
+    assert list(sensor["state"]) == LEVEL_STATES
+    assert list(sensor["state_attributes"]) == [description.key]
+
+
 def test_only_created_sensors_are_translated():
     """No sensor name is left over from a sensor that is no longer created."""
-    created = {"stations"} | {d.translation_key for d in FORECAST_SENSORS} | {
+    created = {"stations"} | {
+        d.translation_key for d in (*FORECAST_SENSORS, *WARNING_SENSORS)
+    } | {
         StationSensor(Mock(), FEEDS[feed], m, None, StationQuery()).translation_key
         for feed, measurements in STATION_MEASUREMENTS.items()
         for m in measurements
