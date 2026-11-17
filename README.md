@@ -114,9 +114,9 @@ Az előrejelzés eszköz ezeket adja:
 - Az eszközről elnevezett **időjárás-entitást** napi (7 napos) és órás előrejelzéssel az időjárás-kártyákhoz
 - **Érzékelőket** az aktuális órára: hőmérséklet, csapadék, felhőzet, szélsebesség, széllökés, szélirány (fok és égtáj), szélerősség (Beaufort-skála, a szélsebességből számítva), légnyomás és időjárási helyzet
 - A **mai minimum- és maximumhőmérsékletet**, valamint az előrejelzés **kiadásának idejét**
-- A **Riasztás 3 órán belül** és a **Figyelmeztetés ma** érzékelőt a HungaroMet veszélyjelzéséből
+- A **Riasztás 3 órán belül** és a **Figyelmeztetés mára** érzékelőt a HungaroMet veszélyjelzéséből
 
-A **Riasztás 3 órán belül** érzékelő a település járására érvényben lévő riasztást, a **Figyelmeztetés ma** érzékelő a település megyéjére a mai napra kiadott figyelmeztetést mutatja. Az értékük a legmagasabb érvényben lévő fokozat: *Nincs*, *Sárga*, *Narancs* vagy *Piros* (pl. *Sárga riasztás*). Az `alerts`, illetve a `warnings` attribútumuk az érvényben lévő jelenségek listája, a legmagasabb fokozattal kezdve; ha nincs érvényben semmi, a lista üres. Minden elemnek három adata van: `label` (a jelenség neve a Home Assistant nyelvén: magyarul, ha az magyar, egyébként angolul), `type` (a jelenség nyelvtől független kulcsa) és `level` (`yellow`, `orange` vagy `red`). Például:
+A **Riasztás 3 órán belül** érzékelő a település járására érvényben lévő riasztást, a **Figyelmeztetés mára** érzékelő a település megyéjére a mai napra kiadott figyelmeztetést mutatja. Az értékük a legmagasabb érvényben lévő fokozat: *Nincs*, *Sárga*, *Narancs* vagy *Piros* (pl. *Sárga riasztás*). Az `alerts`, illetve a `warnings` attribútumuk az érvényben lévő jelenségek listája, a legmagasabb fokozattal kezdve; ha nincs érvényben semmi, a lista üres. Minden elemnek három adata van: `label` (a jelenség neve a Home Assistant nyelvén: magyarul, ha az magyar, egyébként angolul), `type` (a jelenség nyelvtől független kulcsa) és `level` (`yellow`, `orange` vagy `red`). Például:
 
 ```yaml
 warnings:

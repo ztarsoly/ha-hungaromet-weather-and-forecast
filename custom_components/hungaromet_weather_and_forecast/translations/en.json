@@ -450,7 +450,7 @@
         }
       },
       "forecast_warning": {
-        "name": "Warning today",
+        "name": "Warning for today",
         "state": {
           "none": "No warning",
           "yellow": "Yellow warning",

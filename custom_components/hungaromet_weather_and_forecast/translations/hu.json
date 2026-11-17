@@ -450,7 +450,7 @@
         }
       },
       "forecast_warning": {
-        "name": "Figyelmeztetés ma",
+        "name": "Figyelmeztetés mára",
         "state": {
           "none": "Nincs figyelmeztetés",
           "yellow": "Sárga figyelmeztetés",
