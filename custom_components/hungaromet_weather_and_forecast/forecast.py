@@ -38,7 +38,7 @@ _LOGGER = logging.getLogger(__name__)
 
 # met.hu reissues the forecast during the day; check at every full hour, and
 # retry soon after a failed download
-FORECAST_SCHEDULE = {"minute": 0, "second": 0}
+FORECAST_SCHEDULE = {"minute": 0, "second": 59}
 FORECAST_RETRY_DELAY = timedelta(minutes=10)
 
 

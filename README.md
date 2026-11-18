@@ -160,8 +160,8 @@ Az időpontok UTC szerintiek (télen a magyar idő UTC+1, nyáron UTC+2).
 | Napi időjárás | Naponta 09:35:59-kor | óránként újra |
 | Órás időjárás | Óránként, xx:20:59-kor | 10 percenként újra |
 | 10 perces időjárás | 10 percenként, xx:x0:59-kor | percenként újra |
-| Előrejelzés | Óránként, xx:00:00-kor | 10 percenként újra |
-| Riasztás és figyelmeztetés | Óránként, xx:00:00-kor | 10 percenként újra |
+| Előrejelzés | Óránként, xx:00:59-kor | 10 percenként újra |
+| Riasztás és figyelmeztetés | Óránként, xx:00:59-kor | 10 percenként újra |
 | Radarképek | 5 percenként, xx:x0:59-kor és xx:x5:59-kor | percenként újra |
 
 Az újrapróbálkozás legfeljebb a következő ütemezett frissítésig tart. Ezen felül:

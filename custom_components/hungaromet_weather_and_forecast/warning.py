@@ -18,7 +18,7 @@ from .warning_scraper import Warnings, fetch_warnings, find_district
 _LOGGER = logging.getLogger(__name__)
 
 # Checked at every full hour, and retried soon after a failed download
-WARNING_SCHEDULE = {"minute": 0, "second": 0}
+WARNING_SCHEDULE = {"minute": 0, "second": 59}
 WARNING_RETRY_DELAY = timedelta(minutes=10)
 
 

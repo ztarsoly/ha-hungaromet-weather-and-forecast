@@ -288,7 +288,7 @@ def test_coordinator_init():
     args, kwargs = cls.call_args
     assert args[1:] == ("warnings", coordinator._async_scheduled_download, warning.WARNING_RETRY_DELAY)
     assert warning.WARNING_RETRY_DELAY.total_seconds() == 600
-    assert kwargs == {"config_entry": entry, "minute": 0, "second": 0}
+    assert kwargs == {"config_entry": entry, "minute": 0, "second": 59}
     assert coordinator.schedule is cls.return_value
 
 
