@@ -141,7 +141,7 @@ warnings:
 | Extrém hideg | `extreme_cold` | | ✓ |
 | Magas középhőmérséklet | `high_mean_temperature` | | ✓ |
 
-A járást a település koordinátái alapján az integráció a met.hu veszélyjelzési térképének járáshatáraiból határozza meg (a térkép adatai az integrációban vannak); Budapest a Pest megyei figyelmeztetést kapja.
+A járást a település koordinátái alapján az integráció a met.hu veszélyjelzési térképének járáshatáraiból határozza meg (a térkép adatai az integrációban vannak); Budapest a Pest megyei figyelmeztetést kapja. A mai napot a veszélyjelzés napjai közül a nap neve alapján választja ki, így éjfél után is a mai figyelmeztetést mutatja, bár a met.hu csak 00:00 UTC-kor (magyar idő szerint 01:00-kor, nyáron 02:00-kor) lép a következő napra.
 
 A met.hu 6 óránként (01, 07, 13 és 19 órakor) ad egy előrejelzési sort, amely az időpontjától kezdődő 6 órát írja le. A köztes órák számítottak: a hőmérséklet, a felhőzet, a szélsebesség, a széllökés, a légnyomás és a szélirány az egyik sortól a következőig egyenletesen változik (2 tizedesre kerekítve), az időjárási helyzet és a csapadék viszont a sor teljes időszakára vonatkozik, a csapadék egyenlően elosztva az órák között. Ezek számított értékek, nem külön előrejelzések.
 

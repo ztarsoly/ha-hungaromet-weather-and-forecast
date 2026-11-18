@@ -1,5 +1,6 @@
 """Tests for the settlement's alerts and warnings."""
 
+from datetime import date, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,8 +8,11 @@ import aiohttp
 import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.hungaromet_weather_and_forecast import warning
-from custom_components.hungaromet_weather_and_forecast.forecast_scraper import Settlement
+from custom_components.hungaromet_weather_and_forecast import warning, warning_scraper
+from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
+    HUNGARY_TZ,
+    Settlement,
+)
 from custom_components.hungaromet_weather_and_forecast.warning_scraper import (
     ALERT_PHENOMENA,
     PHENOMENON_NAMES,
@@ -21,6 +25,7 @@ from custom_components.hungaromet_weather_and_forecast.warning_scraper import (
     highest_level,
     in_force,
     parse_snippet,
+    today_warning_map,
 )
 from custom_components.hungaromet_weather_and_forecast.warning_sensor import (
     WARNING_SENSORS,
@@ -153,23 +158,80 @@ class FakeResponse:
         return self._text
 
 
-@pytest.mark.asyncio
-async def test_fetch_warnings():
-    session = SimpleNamespace(
+# The day tabs of met.hu's warning page, as on Tuesday until 00:00 UTC
+TABS_FROM_TUESDAY = (
+    "<dl><dd class='bg0'><a href='index.php?c=a'>Riasztás</a></dd>"
+    "<dd class='bg0'><a href='index.php?c=b'>kedd</a></dd>"
+    "<dd class='bg1' onmouseover=\"Tip('<div class=title>Figyelmeztetés holnapra</div>')\">"
+    "<a href='index.php?c=c'>szerda</a></dd>"
+    "<dd class='bg0'><a href='index.php?c=d'>csütörtök</a></dd>"
+    "<dd class='bg0'><a href='index.php?c=e'>péntek</a></dd></dl>"
+)
+TUESDAY = date(2026, 11, 17)
+
+
+@pytest.mark.parametrize(
+    ("today", "warning_map"),
+    [
+        (TUESDAY, "wbhx"),
+        (date(2026, 11, 18), "wchx"),  # after midnight, before met.hu moves the tabs
+        (date(2026, 11, 20), "wehx"),
+        (date(2026, 11, 21), "wbhx"),  # no tab for Saturday: the first tab
+    ],
+)
+def test_today_warning_map(today, warning_map):
+    assert today_warning_map(TABS_FROM_TUESDAY, today) == warning_map
+
+
+def test_today_warning_map_without_tabs():
+    assert today_warning_map("<html></html>", TUESDAY) == "wbhx"
+
+
+def _warning_session():
+    return SimpleNamespace(
         get=MagicMock(
-            side_effect=[FakeResponse(NOTHING), FakeResponse(THUNDERSTORM_AND_WIND)]
+            side_effect=[
+                FakeResponse(NOTHING),
+                FakeResponse(TABS_FROM_TUESDAY),
+                FakeResponse(THUNDERSTORM_AND_WIND),
+            ]
         )
     )
 
-    data = await fetch_warnings(session, "903")
 
-    # The district's alerts, then its county's warnings for today
+@pytest.mark.asyncio
+async def test_fetch_warnings():
+    session = _warning_session()
+
+    data = await fetch_warnings(session, "903", date(2026, 11, 18))
+
+    # The district's alerts, the warning page's day tabs, then the county's
+    # warnings from Wednesday's tab
+    assert [c.args[0] for c in session.get.call_args_list] == [
+        "https://www.met.hu/idojaras/veszelyjelzes/hover.php",
+        "https://www.met.hu/idojaras/veszelyjelzes/",
+        "https://www.met.hu/idojaras/veszelyjelzes/hover.php",
+    ]
     assert [c.kwargs["params"] for c in session.get.call_args_list] == [
         {"id": "wahx", "kod": "903"},
-        {"id": "wbhx", "kod": "9"},
+        None,
+        {"id": "wchx", "kod": "9"},
     ]
     assert highest_level(data.alerts) == "none"
     assert data.warnings["wind_gust"] == "orange"
+
+
+@pytest.mark.asyncio
+async def test_fetch_warnings_for_today_in_hungary():
+    session = _warning_session()
+    # 23:30 UTC on Tuesday is already Wednesday in Hungary
+    now = datetime(2026, 11, 18, 0, 30, tzinfo=HUNGARY_TZ)
+    with patch.object(warning_scraper, "datetime") as clock:
+        clock.now.return_value = now
+        await fetch_warnings(session, "903")
+
+    clock.now.assert_called_once_with(HUNGARY_TZ)
+    assert session.get.call_args_list[2].kwargs["params"]["id"] == "wchx"
 
 
 def _coordinator():

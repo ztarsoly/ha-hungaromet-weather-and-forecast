@@ -2,26 +2,35 @@
 
 Alerts (riasztás) are issued for districts (járás) for the next few hours;
 warnings (figyelmeztetés) for counties (megye) for a whole day. met.hu's map
-shows each area's alerts or warnings in a small snippet: one row per phenomenon, with an icon
-named after the phenomenon and its level, e.g. ts1.gif for a level 1
-thunderstorm.
+shows each area's alerts or warnings in a small snippet: one row per
+phenomenon, with an icon named after the phenomenon and its level, e.g.
+ts1.gif for a level 1 thunderstorm.
 """
 
 import json
 import math
+import logging
 import re
 from dataclasses import dataclass, field
+from datetime import date, datetime
 from functools import cache
 from pathlib import Path
 
 import aiohttp
 
-from .forecast_scraper import REQUEST_HEADERS, SITE
+from .forecast_scraper import HUNGARY_TZ, REQUEST_HEADERS, SITE
+
+_LOGGER = logging.getLogger(__name__)
 
 WARNING_PAGE_URL = f"{SITE}/idojaras/veszelyjelzes/"
 SNIPPET_URL = f"{WARNING_PAGE_URL}hover.php"
 ALERT_MAP = "wahx"  # alerts in force, by district
-TODAY_WARNING_MAP = "wbhx"  # today's warnings, by county
+# The warning page's day tabs and their warnings by county. The first tab is
+# usually today, but met.hu moves the tabs on only at 00:00 UTC, so after
+# midnight in Hungary the first tab is still yesterday for an hour or two
+WARNING_MAPS = {"b": "wbhx", "c": "wchx", "d": "wdhx", "e": "wehx"}
+DAY_TAB = re.compile(r"href='index\.php\?c=([b-e])'>([^<]+)</a>")
+WEEKDAYS = ("hétfő", "kedd", "szerda", "csütörtök", "péntek", "szombat", "vasárnap")
 
 # met.hu's icon names, in the order of met.hu's legend
 ALERT_PHENOMENA = {
@@ -173,10 +182,23 @@ def in_force(levels: dict[str, str], language: str) -> list[dict[str, str]]:
     ]
 
 
-async def _fetch_snippet(session: aiohttp.ClientSession, map_id: str, area) -> str:
+def today_warning_map(html: str, today: date) -> str:
+    """Return the warning map of the warning page's tab named after today.
+
+    Falls back to the first tab if no tab is named after today.
+    """
+    wanted = WEEKDAYS[today.weekday()]
+    for tab, name in DAY_TAB.findall(html):
+        if name.strip() == wanted:
+            return WARNING_MAPS[tab]
+    _LOGGER.debug("No warning tab for %s on met.hu; using the first one", wanted)
+    return WARNING_MAPS["b"]
+
+
+async def _fetch_text(session: aiohttp.ClientSession, url: str, params=None) -> str:
     async with session.get(
-        SNIPPET_URL,
-        params={"id": map_id, "kod": str(area)},
+        url,
+        params=params,
         headers={**REQUEST_HEADERS, "Referer": WARNING_PAGE_URL},
         timeout=aiohttp.ClientTimeout(total=15),
     ) as resp:
@@ -184,10 +206,20 @@ async def _fetch_snippet(session: aiohttp.ClientSession, map_id: str, area) -> s
         return await resp.text(encoding="utf-8", errors="replace")
 
 
-async def fetch_warnings(session: aiohttp.ClientSession, district: str) -> Warnings:
+async def _fetch_snippet(session: aiohttp.ClientSession, map_id: str, area) -> str:
+    return await _fetch_text(session, SNIPPET_URL, {"id": map_id, "kod": str(area)})
+
+
+async def fetch_warnings(
+    session: aiohttp.ClientSession, district: str, today: date | None = None
+) -> Warnings:
     """Download the district's alerts and its county's warnings for today."""
+    today = today or datetime.now(HUNGARY_TZ).date()
     alerts = await _fetch_snippet(session, ALERT_MAP, district)
-    warnings = await _fetch_snippet(session, TODAY_WARNING_MAP, county_of(district))
+    page = await _fetch_text(session, WARNING_PAGE_URL)
+    warnings = await _fetch_snippet(
+        session, today_warning_map(page, today), county_of(district)
+    )
     return Warnings(
         alerts=parse_snippet(alerts, ALERT_PHENOMENA),
         warnings=parse_snippet(warnings, WARNING_PHENOMENA),
