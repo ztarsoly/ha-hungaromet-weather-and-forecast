@@ -1,9 +1,10 @@
 """Tests for image.py platform setup"""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
 from types import SimpleNamespace
 from unittest.mock import MagicMock
-
-import pytest
 
 from custom_components.hungaromet_weather_and_forecast.image import (
     async_setup_entry,
@@ -34,7 +35,6 @@ def _added(async_add_entities):
     return [e for call in async_add_entities.call_args_list for e in call.args[0]]
 
 
-@pytest.mark.asyncio
 async def test_location_entry_gets_its_regional_radar():
     """A location entry gets only the regional radar for its location."""
     entry = _entry("first")
@@ -49,7 +49,6 @@ async def test_location_entry_gets_its_regional_radar():
     assert async_add_entities.call_args.args[1] is True
 
 
-@pytest.mark.asyncio
 async def test_radar_entry_gets_the_national_radar():
     """The radar entry gets only the national radar image."""
     entry = _entry("radar", {"entry_type": "radar"})
@@ -59,10 +58,10 @@ async def test_radar_entry_gets_the_national_radar():
     await async_setup_entry(hass, entry, async_add_entities)
 
     (national,) = _added(async_add_entities)
-    assert type(national) is HungarometRadarImage
+    # Exactly the national radar, not its regional subclass
+    assert type(national) is HungarometRadarImage  # pylint: disable=unidiomatic-typecheck
 
 
-@pytest.mark.asyncio
 async def test_regional_radar_follows_the_settlement_location():
     """With the settlement as location, its quadrant is used instead of home's."""
     pecs = {"name": "Pécs", "kod": "9", "lat": 46.07, "lon": 18.23}

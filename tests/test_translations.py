@@ -73,6 +73,7 @@ def _all_stations_df():
 
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_every_wind_strength_is_translated(language):
+    """Test every wind strength is translated."""
     states = _load(language)["entity"]["sensor"]["forecast_wind_strength"]["state"]
     assert list(states) == WIND_STRENGTH_STATES
 
@@ -80,6 +81,7 @@ def test_every_wind_strength_is_translated(language):
 @pytest.mark.parametrize("language", LANGUAGES)
 @pytest.mark.parametrize("description", WARNING_SENSORS, ids=lambda d: d.key)
 def test_every_warning_level_is_translated(language, description):
+    """Test every warning level is translated."""
     sensor = _load(language)["entity"]["sensor"][description.translation_key]
     assert list(sensor["state"]) == LEVEL_STATES
     assert list(sensor["state_attributes"]) == [description.key]

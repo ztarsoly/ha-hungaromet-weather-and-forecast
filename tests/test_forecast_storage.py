@@ -1,5 +1,8 @@
 """Tests for saving the last forecast so it survives a restart."""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -43,6 +46,7 @@ def _forecast():
 
 
 def test_forecast_round_trip():
+    """Test forecast round trip."""
     stored = forecast_to_dict(_forecast())
 
     assert stored["issued"] == "2026-10-28T10:46:00+01:00"
@@ -57,6 +61,7 @@ def test_forecast_round_trip():
 
 
 def test_forecast_round_trip_without_times():
+    """Test forecast round trip without times."""
     data = ForecastData(settlement="X", periods=[ForecastPeriod(temperature=1)])
     rebuilt = forecast_from_dict(forecast_to_dict(data), NOW)
     assert rebuilt.issued is None
@@ -66,7 +71,9 @@ def test_forecast_round_trip_without_times():
 def test_saved_forecast_gives_back_the_dropped_row_after_a_restart():
     """Restarted at 17:22: met.hu's new table starts at 19:00."""
     saved = forecast_from_dict(forecast_to_dict(_forecast()), NOW)
-    new = ForecastData(settlement="Debrecen", periods=[_at(19, temperature=10), _at(1, 29, temperature=8)])
+    new = ForecastData(
+        settlement="Debrecen", periods=[_at(19, temperature=10), _at(1, 29, temperature=8)]
+    )
     _derive(new, NOW)
 
     data = keep_dropped_row(new, saved, NOW)
@@ -82,8 +89,8 @@ def _coordinator(stored):
     return coordinator
 
 
-@pytest.mark.asyncio
 async def test_load_stored_forecast():
+    """Test load stored forecast."""
     stored = {"kod": "725", "forecast": forecast_to_dict(_forecast())}
     coordinator = _coordinator(stored)
 
@@ -96,7 +103,6 @@ async def test_load_stored_forecast():
     assert coordinator.data.current.weather_condition == "clear-night"
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "stored",
     [
@@ -105,21 +111,22 @@ async def test_load_stored_forecast():
     ],
 )
 async def test_load_ignores_missing_or_other_settlements(stored):
+    """Test load ignores missing or other settlements."""
     coordinator = _coordinator(stored)
     await coordinator.async_load_stored()
     assert coordinator.data is None
 
 
-@pytest.mark.asyncio
 async def test_load_ignores_unreadable_forecast(caplog):
+    """Test load ignores unreadable forecast."""
     coordinator = _coordinator({"kod": "725", "forecast": {"periods": []}})
     await coordinator.async_load_stored()
     assert coordinator.data is None
     assert "Ignoring the saved forecast" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_each_download_is_saved():
+    """Test each download is saved."""
     coordinator = _coordinator(None)
     coordinator.hass = MagicMock()
     coordinator._store.async_save = AsyncMock()
@@ -135,6 +142,7 @@ async def test_each_download_is_saved():
 
 
 def test_store_is_per_entry():
+    """Test store is per entry."""
     with patch.object(forecast, "Store") as store:
         forecast.forecast_store("hass", "e1")
     store.assert_called_once_with(
@@ -143,6 +151,7 @@ def test_store_is_per_entry():
 
 
 def test_coordinator_creates_its_store():
+    """Test coordinator creates its store."""
     entry = SimpleNamespace(entry_id="e1")
     with (
         patch.object(forecast.ScheduledCoordinator, "__init__", return_value=None),
@@ -153,8 +162,8 @@ def test_coordinator_creates_its_store():
     assert coordinator._store is store.return_value
 
 
-@pytest.mark.asyncio
 async def test_removing_an_entry_deletes_its_saved_forecast():
+    """Test removing an entry deletes its saved forecast."""
     hass = MagicMock()
     store = MagicMock(async_remove=AsyncMock())
     with patch.object(integration, "forecast_store", return_value=store) as get_store:

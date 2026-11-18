@@ -1,5 +1,8 @@
 """Tests for the radar frames and animations (radar.py, national_radar.py)."""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
 from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
@@ -7,8 +10,17 @@ from unittest.mock import MagicMock, Mock, patch
 from PIL import Image
 import requests
 
-from custom_components.hungaromet_weather_and_forecast.national_radar import HungarometRadarImage, get_latest_image_urls
-from custom_components.hungaromet_weather_and_forecast.radar import RadarFrames, create_gif, download_image
+from custom_components.hungaromet_weather_and_forecast.national_radar import (
+    HungarometRadarImage,
+    get_latest_image_urls,
+)
+from custom_components.hungaromet_weather_and_forecast.radar import (
+    RadarFrames,
+    create_gif,
+    download_image,
+)
+
+DOWNLOAD_IMAGE = "custom_components.hungaromet_weather_and_forecast.radar.download_image"
 
 
 @patch("custom_components.hungaromet_weather_and_forecast.national_radar.requests.get")
@@ -120,6 +132,7 @@ def _png(color="red"):
 
 @patch("custom_components.hungaromet_weather_and_forecast.radar.requests.get")
 def test_download_image_success(mock_get):
+    """Test download image success."""
     mock_get.return_value = _png()
 
     image = download_image("http://example.com/img1.png")
@@ -130,6 +143,7 @@ def test_download_image_success(mock_get):
 
 @patch("custom_components.hungaromet_weather_and_forecast.radar.requests.get")
 def test_download_image_handles_failure(mock_get):
+    """Test download image handles failure."""
     mock_get.side_effect = requests.RequestException("Network error")
 
     assert download_image("http://example.com/img1.png") is None
@@ -148,7 +162,7 @@ def _frame(url):
 def test_frames_download_only_the_new_frame():
     """The newest frame is appended and the oldest one dropped."""
     frames = RadarFrames()
-    with patch(f"custom_components.hungaromet_weather_and_forecast.radar.download_image", side_effect=_frame) as get:
+    with patch(DOWNLOAD_IMAGE, side_effect=_frame) as get:
         frames.update(_urls(0, 5, 10, 15, 20))
         assert get.call_count == 5
 
@@ -162,8 +176,10 @@ def test_frames_download_only_the_new_frame():
 
 
 def test_frames_with_nothing_new_download_nothing():
+    """Test frames with nothing new download nothing."""
     frames = RadarFrames()
-    with patch(f"custom_components.hungaromet_weather_and_forecast.radar.download_image", return_value=Image.new("RGB", (5, 5))) as get:
+    frame = Image.new("RGB", (5, 5))
+    with patch(DOWNLOAD_IMAGE, return_value=frame) as get:
         frames.update(_urls(0, 5))
         newest, gif = frames.update(_urls(0, 5))
     assert get.call_count == 2
@@ -176,7 +192,7 @@ def test_frames_retry_a_failed_download():
     frames = RadarFrames()
     images = {"http://x/f_20261030_1005.png": None}
     with patch(
-        f"custom_components.hungaromet_weather_and_forecast.radar.download_image",
+        DOWNLOAD_IMAGE,
         side_effect=lambda url: images.get(url, Image.new("RGB", (5, 5))),
     ) as get:
         newest, gif = frames.update(_urls(0, 5))
@@ -190,8 +206,9 @@ def test_frames_retry_a_failed_download():
 
 
 def test_frames_without_any_download():
+    """Test frames without any download."""
     frames = RadarFrames()
-    with patch(f"custom_components.hungaromet_weather_and_forecast.radar.download_image", return_value=None):
+    with patch(DOWNLOAD_IMAGE, return_value=None):
         assert frames.update(_urls(0)) == (None, None)
 
 
@@ -229,6 +246,7 @@ def test_animation_timing():
 
 @patch("custom_components.hungaromet_weather_and_forecast.national_radar.requests.get")
 def test_newest_six_frames_by_default(mock_get):
+    """Test newest six frames by default."""
     links = "".join(f'<a href="f_20261030_10{m:02d}.png">x</a>' for m in range(0, 40, 5))
     mock_get.return_value = Mock(text=links)
 
@@ -248,9 +266,10 @@ def _national():
 
 @patch("custom_components.hungaromet_weather_and_forecast.national_radar.get_latest_image_urls")
 def test_national_rebuild_uses_the_open_data_listing(mock_get_urls):
+    """Test national rebuild uses the open data listing."""
     mock_get_urls.return_value = _urls(0, 5)
     image = _national()
-    with patch(f"custom_components.hungaromet_weather_and_forecast.radar.download_image", side_effect=_frame):
+    with patch(DOWNLOAD_IMAGE, side_effect=_frame):
         newest, gif = image._rebuild_gif()
 
     mock_get_urls.assert_called_once_with(
@@ -262,6 +281,7 @@ def test_national_rebuild_uses_the_open_data_listing(mock_get_urls):
 
 @patch("custom_components.hungaromet_weather_and_forecast.national_radar.get_latest_image_urls")
 def test_rebuild_without_listed_frames(mock_get_urls, caplog):
+    """Test rebuild without listed frames."""
     mock_get_urls.return_value = []
 
     assert _national()._rebuild_gif() == (None, None)
@@ -270,6 +290,7 @@ def test_rebuild_without_listed_frames(mock_get_urls, caplog):
 
 @patch("custom_components.hungaromet_weather_and_forecast.national_radar.get_latest_image_urls")
 def test_rebuild_handles_network_error(mock_get_urls, caplog):
+    """Test rebuild handles network error."""
     mock_get_urls.side_effect = requests.RequestException("Network error")
 
     assert _national()._rebuild_gif() == (None, None)

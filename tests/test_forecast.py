@@ -1,5 +1,8 @@
 """Tests for the met.hu settlement forecast."""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -107,10 +110,12 @@ PAGE = (
 
 @pytest.fixture
 def data():
+    """Return the sample page parsed."""
     return parse_page(PAGE, "Debrecen", NOW)
 
 
 def test_parse_page_reads_every_row(data):
+    """Test parse page reads every row."""
     assert data.settlement == "Debrecen"
     assert data.issued == datetime(2026, 10, 28, 9, 46, tzinfo=HUNGARY_TZ)
     assert [p.forecast_time.isoformat() for p in data.periods] == [
@@ -133,6 +138,7 @@ def test_parse_page_reads_every_row(data):
 
 
 def test_parse_page_conditions_and_wind(caplog):
+    """Test parse page conditions and wind."""
     data = parse_page(PAGE, "Debrecen", NOW)
     assert [p.weather_condition for p in data.periods] == [
         "partlycloudy",
@@ -174,12 +180,14 @@ def test_parse_page_conditions_and_wind(caplog):
     ],
 )
 def test_condition_for(description, night, condition):
+    """Test condition for."""
     assert condition_for(description, night) == condition
     assert condition in CONDITION_STATES
 
 
 def test_current_period_is_the_current_hour(data):
     # 10:30 falls in the 10:00 hour, interpolated between 07:00 and 13:00
+    """Test current period is the current hour."""
     assert data.current.forecast_time.hour == 10
     assert data.current.temperature == 10.0
     late = NOW + timedelta(days=5)
@@ -187,6 +195,7 @@ def test_current_period_is_the_current_hour(data):
 
 
 def test_daily_summary(data):
+    """Test daily summary."""
     today, tomorrow = data.daily
     assert today.forecast_time.hour == 12
     assert (today.temperature_min, today.temperature_max) == (-1, 21)
@@ -209,6 +218,7 @@ def _day_rows(*rows):
 
 
 def test_daily_cloud_cover_is_the_average():
+    """Test daily cloud cover is the average."""
     rows = _day_rows(*({"cloud_cover": c} for c in (100, 80, 20, 0)))
     assert aggregate_daily(rows)[0].cloud_cover == 50
     # A row without cloud cover does not count
@@ -228,22 +238,26 @@ def test_daily_cloud_cover_is_the_average():
     ],
 )
 def test_mean_bearing(bearings, expected):
+    """Test mean bearing."""
     assert mean_bearing(bearings) == expected
 
 
 def test_daily_wind_bearing_is_the_compass_average():
+    """Test daily wind bearing is the compass average."""
     rows = _day_rows({"wind_bearing": 350}, {"wind_bearing": 10})
     assert aggregate_daily(rows)[0].wind_bearing == 0
 
 
 def test_daily_wind_bearing_without_a_direction():
     # The bearings cancel out, or no row has one
+    """Test daily wind bearing without a direction."""
     rows = _day_rows({"wind_bearing": 90}, {"wind_bearing": 270})
     assert aggregate_daily(rows)[0].wind_bearing is None
     assert aggregate_daily(_day_rows({}, {}))[0].wind_bearing is None
 
 
 def test_daily_summary_tolerates_missing_values():
+    """Test daily summary tolerates missing values."""
     period = ForecastPeriod(forecast_time=NOW)
     (day,) = aggregate_daily([period, ForecastPeriod()])
     assert day.temperature is None and day.precipitation is None
@@ -255,11 +269,13 @@ def test_daily_summary_tolerates_missing_values():
     ["<html></html>", "<table><tbody><tr><th>x</th></tr></tbody></table>"],
 )
 def test_parse_page_without_forecast_raises(html):
+    """Test parse page without forecast raises."""
     with pytest.raises(ValueError):
         parse_page(html, "Sehol", NOW)
 
 
 def test_dates_take_the_nearest_year():
+    """Test dates take the nearest year."""
     page = (
         "<table><tbody>"
         + _forecast_row("07:00", 1, "w002", "x", "keleti", 90, (1, 2), day=_day("január", 2, 2))
@@ -283,6 +299,7 @@ def test_dates_take_the_nearest_year():
     ],
 )
 def test_unreadable_days_fall_back_to_today(day):
+    """Test unreadable days fall back to today."""
     page = (
         "<table><tbody>"
         + _forecast_row("07:00", 1, "w002", "x", "keleti", 90, (1, 2), day=day)
@@ -293,6 +310,7 @@ def test_unreadable_days_fall_back_to_today(day):
 
 
 def test_row_without_symbol_wind_or_values():
+    """Test row without symbol wind or values."""
     page = (
         "<table><tbody><tr><td class='ora'>07:00</td>"
         "<td class='idoikon'><img src='/images/spacer.png'></td><td class='idoikon'></td>"
@@ -307,6 +325,7 @@ def test_row_without_symbol_wind_or_values():
 
 
 class FakeResponse:
+    """An aiohttp response with fixed JSON and text."""
     def __init__(self, json_data=None, text=""):
         self._json = json_data
         self._text = text
@@ -318,12 +337,15 @@ class FakeResponse:
         return False
 
     def raise_for_status(self):
+        """Never raise; the response is a success."""
         return None
 
     async def json(self, content_type=None):
+        """Return the JSON."""
         return self._json
 
     async def text(self, encoding=None, errors=None):
+        """Return the text."""
         return self._text
 
 
@@ -334,8 +356,8 @@ def _session(json_data=None, text=""):
     )
 
 
-@pytest.mark.asyncio
 async def test_lookup_settlement_prefers_the_exact_name():
+    """Test lookup settlement prefers the exact name."""
     session = _session([
         {"kod": 726, "value": "Debrecen-Téglás", "lon": "21.625", "lat": "47.532"},
         {"kod": 725, "value": "Debrecen", "lon": "21.648", "lat": "47.543"},
@@ -345,27 +367,27 @@ async def test_lookup_settlement_prefers_the_exact_name():
     assert session.get.call_args.kwargs["params"] == {"term": " debrecen "}
 
 
-@pytest.mark.asyncio
 async def test_lookup_settlement_takes_the_first_suggestion_otherwise():
+    """Test lookup settlement takes the first suggestion otherwise."""
     session = _session([{"kod": 9, "value": "Pécs", "lon": "18", "lat": "46"}])
     assert (await lookup_settlement(session, "Pec")).name == "Pécs"
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("json_data", [[], None, {"error": 1}])
 async def test_lookup_settlement_without_suggestions(json_data):
+    """Test lookup settlement without suggestions."""
     assert await lookup_settlement(_session(json_data), "X") is None
 
 
-@pytest.mark.asyncio
 async def test_lookup_settlement_with_an_unusable_suggestion(caplog):
+    """Test lookup settlement with an unusable suggestion."""
     session = _session([{"value": "X", "lat": "1", "lon": "2"}])
     assert await lookup_settlement(session, "X") is None
     assert "unusable settlement" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_fetch_forecast_posts_the_settlement():
+    """Test fetch forecast posts the settlement."""
     session = _session(text=PAGE)
 
     data = await fetch_forecast(session, DEBRECEN)
@@ -382,6 +404,7 @@ async def test_fetch_forecast_posts_the_settlement():
 
 
 def test_stored_settlement_prefers_options():
+    """Test stored settlement prefers options."""
     stored = {"name": "Pécs", "kod": "9", "lat": 46.0, "lon": 18.0}
     entry = SimpleNamespace(data={CONF_FORECAST: forecast.settlement_to_dict(DEBRECEN)}, options={})
     assert forecast.stored_settlement(entry) == DEBRECEN
@@ -429,32 +452,41 @@ def test_stored_settlement_prefers_options():
     ],
 )
 def test_sensor_location(data, options, expected):
+    """Test sensor location."""
     entry = SimpleNamespace(data=data, options=options)
     assert forecast.sensor_location(entry) == expected
 
 
 def test_reference_coords_prefer_the_given_location():
+    """Test reference coords prefer the given location."""
     hass = SimpleNamespace(config=SimpleNamespace(latitude=47.0, longitude=19.0))
     assert _get_reference_coords(hass) == (47.0, 19.0)
     assert _get_reference_coords(hass, (46.0, 18.2)) == (46.0, 18.2)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("user_input", "resolved", "expected"),
     [
         ({CONF_LOCATION: LOCATION_HOME}, (None, None), (None, {})),
-        ({CONF_LOCATION: LOCATION_SETTLEMENT}, (None, None), (None, {CONF_LOCATION: "settlement_required"})),
+        (
+            {CONF_LOCATION: LOCATION_SETTLEMENT},
+            (None, None),
+            (None, {CONF_LOCATION: "settlement_required"}),
+        ),
         ({CONF_LOCATION: LOCATION_SETTLEMENT}, (DEBRECEN, None), (DEBRECEN, {})),
-        ({CONF_LOCATION: LOCATION_HOME}, (None, "cannot_connect"), (None, {"forecast_settlement": "cannot_connect"})),
+        (
+            {CONF_LOCATION: LOCATION_HOME},
+            (None, "cannot_connect"),
+            (None, {"forecast_settlement": "cannot_connect"}),
+        ),
     ],
 )
 async def test_validate_forecast(user_input, resolved, expected):
+    """Test validate forecast."""
     with patch.object(options_flow, "async_resolve_settlement", AsyncMock(return_value=resolved)):
         assert await options_flow.async_validate_forecast(MagicMock(), user_input) == expected
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("name", "lookup", "expected"),
     [
@@ -467,6 +499,7 @@ async def test_validate_forecast(user_input, resolved, expected):
     ],
 )
 async def test_resolve_settlement(name, lookup, expected):
+    """Test resolve settlement."""
     with (
         patch.object(forecast, "async_get_clientsession"),
         patch.object(forecast, "lookup_settlement", lookup),
@@ -475,6 +508,7 @@ async def test_resolve_settlement(name, lookup, expected):
 
 
 def test_forecast_device_info():
+    """Test forecast device info."""
     info = forecast.forecast_device_info(EntryScope.from_entry(ENTRY))
     assert info["identifiers"] == {("hungaromet_weather_and_forecast", "e1_hungaromet_forecast")}
     assert info["translation_key"] == "forecast"
@@ -491,8 +525,8 @@ def _coordinator():
     return coordinator
 
 
-@pytest.mark.asyncio
 async def test_coordinator_update_fetches_forecast(data):
+    """Test coordinator update fetches forecast."""
     coordinator = _coordinator()
     with (
         patch.object(forecast, "async_get_clientsession"),
@@ -501,9 +535,9 @@ async def test_coordinator_update_fetches_forecast(data):
         assert await coordinator._async_update_data() is data
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("error", [aiohttp.ClientError("x"), TimeoutError(), ValueError("x")])
 async def test_coordinator_update_failure(error):
+    """Test coordinator update failure."""
     coordinator = _coordinator()
     with (
         patch.object(forecast, "async_get_clientsession"),
@@ -514,6 +548,7 @@ async def test_coordinator_update_failure(error):
 
 
 def test_coordinator_init():
+    """Test coordinator init."""
     hass = MagicMock()
     entry = MagicMock()
     with patch.object(forecast.ScheduledCoordinator, "__init__", return_value=None) as init:
@@ -523,14 +558,14 @@ def test_coordinator_init():
     assert init.call_args.kwargs["config_entry"] is entry
 
 
-@pytest.mark.asyncio
 async def test_setup_forecast_without_settlement():
+    """Test setup forecast without settlement."""
     entry = SimpleNamespace(data={}, options={})
     assert await forecast.async_setup_forecast(MagicMock(), entry) is None
 
 
-@pytest.mark.asyncio
 async def test_setup_forecast_schedules_refreshes():
+    """Test setup forecast schedules refreshes."""
     entry = MagicMock(
         entry_id="e1",
         data={CONF_FORECAST: forecast.settlement_to_dict(DEBRECEN)},
@@ -563,6 +598,7 @@ async def test_setup_forecast_schedules_refreshes():
 
 
 def test_coordinator_schedule():
+    """Test coordinator schedule."""
     entry = SimpleNamespace(entry_id="e1")
     with (
         patch.object(forecast.ScheduledCoordinator, "__init__", return_value=None),
@@ -573,6 +609,8 @@ def test_coordinator_schedule():
 
     args, kwargs = cls.call_args
     assert args[:2] == ("hass", "forecast")
+    # A bound method is a new object each time, so it is compared with ==
+    # pylint: disable-next=comparison-with-callable
     assert args[2] == coordinator._async_scheduled_download
     assert args[3] == forecast.FORECAST_RETRY_DELAY
     assert kwargs == {"config_entry": entry, **forecast.FORECAST_SCHEDULE}
@@ -587,8 +625,8 @@ def _scheduled_coordinator(listeners):
     return coordinator
 
 
-@pytest.mark.asyncio
 async def test_scheduled_download_reports_whether_it_worked():
+    """Test scheduled download reports whether it worked."""
     coordinator = _scheduled_coordinator({1: (MagicMock(), None)})
 
     assert await coordinator._async_scheduled_download(None) is False
@@ -597,7 +635,6 @@ async def test_scheduled_download_reports_whether_it_worked():
     assert coordinator.async_refresh.await_count == 2
 
 
-@pytest.mark.asyncio
 async def test_disabled_forecast_is_not_downloaded():
     """No enabled entity shows the forecast: nothing to download or retry."""
     coordinator = _scheduled_coordinator({})
@@ -608,15 +645,15 @@ async def test_disabled_forecast_is_not_downloaded():
     coordinator.async_refresh.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_update_service_downloads_a_shown_forecast():
+    """Test update service downloads a shown forecast."""
     coordinator = _scheduled_coordinator({1: (MagicMock(), None)})
     await coordinator.async_update_now()
     coordinator.async_refresh.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_schedule_run_now_retries_like_a_scheduled_run(monkeypatch):
+    """Test schedule run now retries like a scheduled run."""
     later = []
     monkeypatch.setattr(scheduler, "async_call_later", lambda h, d, a: later.append(d))
     job = AsyncMock(return_value=False)
@@ -633,6 +670,7 @@ def _sensor(key, data):
 
 
 def test_forecast_sensors_cover_every_description():
+    """Test forecast sensors cover every description."""
     sensors = forecast_sensors(MagicMock(config_entry=ENTRY))
     assert [s.entity_description.key for s in sensors] == [d.key for d in FORECAST_SENSORS]
     assert sensors[0].unique_id == "e1_hungaromet_forecast_temperature"
@@ -640,6 +678,7 @@ def test_forecast_sensors_cover_every_description():
 
 
 def test_forecast_sensor_values(data):
+    """Test forecast sensor values."""
     assert _sensor("temperature", data).native_value == 10.0
     assert _sensor("temperature_min", data).native_value == -1
     assert _sensor("temperature_max", data).native_value == 21
@@ -650,11 +689,13 @@ def test_forecast_sensor_values(data):
 
 
 def test_forecast_sensors_have_no_attributes_of_their_own(data):
+    """Test forecast sensors have no attributes of their own."""
     for description in FORECAST_SENSORS:
         assert _sensor(description.key, data).extra_state_attributes is None
 
 
 def test_forecast_sensor_without_data():
+    """Test forecast sensor without data."""
     assert _sensor("temperature", None).native_value is None
     empty = ForecastData(settlement="X")
     assert _sensor("temperature_min", empty).native_value is None
@@ -662,11 +703,13 @@ def test_forecast_sensor_without_data():
 
 
 def test_today_without_matching_day(data):
+    """Test today without matching day."""
     data.daily = []
     assert _sensor("temperature_max", data).native_value is None
 
 
 def test_enum_sensors_list_their_states():
+    """Test enum sensors list their states."""
     by_key = {d.key: d for d in FORECAST_SENSORS}
     assert by_key["weather_condition"].device_class == SensorDeviceClass.ENUM
     assert by_key["weather_condition"].options == CONDITION_STATES
@@ -695,10 +738,12 @@ def test_enum_sensors_list_their_states():
     ],
 )
 def test_beaufort_force(speed, strength):
+    """Test beaufort force."""
     assert beaufort_force(speed) == strength
 
 
 def test_wind_strength_follows_the_mean_wind_speed():
+    """Test wind strength follows the mean wind speed."""
     assert ForecastPeriod(wind_speed=24).wind_strength == "moderate_breeze"
     assert ForecastPeriod(wind_gust=60).wind_strength is None
     assert "wind_strength" not in forecast_to_dict(
@@ -707,6 +752,7 @@ def test_wind_strength_follows_the_mean_wind_speed():
 
 
 def test_wind_strength_sensor(data):
+    """Test wind strength sensor."""
     sensor = _sensor("wind_strength", data)
     assert sensor.native_value == "light_breeze"  # 7 km/h
     assert sensor.entity_description.device_class == SensorDeviceClass.ENUM
@@ -714,13 +760,16 @@ def test_wind_strength_sensor(data):
 
 
 def test_numeric_forecast_sensors_show_one_decimal():
+    """Test numeric forecast sensors show one decimal."""
     for description in FORECAST_SENSORS:
         numeric = description.native_unit_of_measurement is not None
         assert description.suggested_display_precision == (1 if numeric else None)
 
 
 def _weather(data):
-    with patch.object(weather_platform.SingleCoordinatorWeatherEntity, "__init__", return_value=None):
+    with patch.object(
+        weather_platform.SingleCoordinatorWeatherEntity, "__init__", return_value=None
+    ):
         entity = weather_platform.HungarometForecastWeather(
             MagicMock(config_entry=ENTRY)
         )
@@ -729,6 +778,7 @@ def _weather(data):
 
 
 def test_weather_current_conditions(data):
+    """Test weather current conditions."""
     entity = _weather(data)
     assert entity.unique_id == "e1_hungaromet_forecast_weather"
     assert entity.device_info["identifiers"] == {
@@ -745,6 +795,7 @@ def test_weather_current_conditions(data):
 
 
 def test_weather_forecasts(data):
+    """Test weather forecasts."""
     entity = _weather(data)
     daily = entity._async_forecast_daily()
     hourly = entity._async_forecast_hourly()
@@ -761,6 +812,7 @@ def test_weather_forecasts(data):
 
 
 def test_weather_without_data():
+    """Test weather without data."""
     entity = _weather(None)
     assert entity.condition is None
     assert entity.native_temperature is None
@@ -776,8 +828,8 @@ def test_weather_without_data():
     assert empty.extra_state_attributes == {"precipitation": None}
 
 
-@pytest.mark.asyncio
 async def test_weather_platform_setup():
+    """Test weather platform setup."""
     add = MagicMock()
     hass = SimpleNamespace(data={"hungaromet_weather_and_forecast": {"abc": MagicMock()}})
 

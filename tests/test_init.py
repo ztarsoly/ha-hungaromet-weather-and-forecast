@@ -17,7 +17,6 @@ from custom_components.hungaromet_weather_and_forecast.radar import (
 )
 
 
-@pytest.mark.asyncio
 async def test_async_setup():
     """Test async_setup returns True."""
     hass = MagicMock()
@@ -47,7 +46,6 @@ def forecast_setup():
         yield setup, coordinator
 
 
-@pytest.mark.asyncio
 async def test_async_setup_entry(forecast_setup):
     """Test async_setup_entry sets up the forecast and forwards to platforms."""
     setup, coordinator = forecast_setup
@@ -70,8 +68,8 @@ async def test_async_setup_entry(forecast_setup):
     coordinator.warnings.schedule.async_run_now.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_async_setup_entry_without_forecast(forecast_setup):
+    """Test async setup entry without forecast."""
     setup, _ = forecast_setup
     setup.return_value = None
     hass = MagicMock(data={})
@@ -81,7 +79,6 @@ async def test_async_setup_entry_without_forecast(forecast_setup):
     assert hass.data["hungaromet_weather_and_forecast"]["abc"] is None
 
 
-@pytest.mark.asyncio
 async def test_async_setup_entry_reloads_on_options_change(forecast_setup):
     """Test async_setup_entry registers a reload listener."""
     hass = MagicMock()
@@ -99,7 +96,6 @@ async def test_async_setup_entry_reloads_on_options_change(forecast_setup):
     )
 
 
-@pytest.mark.asyncio
 async def test_async_unload_entry():
     """Test async_unload_entry unloads the platforms."""
     hass = MagicMock()
@@ -114,7 +110,6 @@ async def test_async_unload_entry():
     assert hass.data["hungaromet_weather_and_forecast"] == {}
 
 
-@pytest.mark.asyncio
 async def test_failed_unload_keeps_the_forecast():
     """A failed unload leaves the forecast coordinator in place."""
     hass = MagicMock()
@@ -126,7 +121,6 @@ async def test_failed_unload_keeps_the_forecast():
     assert hass.data["hungaromet_weather_and_forecast"] == {"abc": "coordinator"}
 
 
-@pytest.mark.asyncio
 async def test_reload_entry_reloads_by_id():
     """Test the update listener reloads the config entry."""
     hass = MagicMock()
@@ -143,7 +137,6 @@ def _radar_entry(entry_id="radar"):
     return MagicMock(entry_id=entry_id, data={"entry_type": "radar"})
 
 
-@pytest.mark.asyncio
 async def test_radar_entry_sets_up_only_the_image(forecast_setup):
     """The radar entry has only the national radar image and no forecast."""
     setup, _ = forecast_setup
@@ -161,7 +154,6 @@ async def test_radar_entry_sets_up_only_the_image(forecast_setup):
     hass.config_entries.flow.async_init.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_location_entry_creates_the_missing_radar_entry(forecast_setup):
     """Without a radar entry, a location entry creates it in the background."""
     hass = MagicMock()
@@ -182,7 +174,6 @@ async def test_location_entry_creates_the_missing_radar_entry(forecast_setup):
     )
 
 
-@pytest.mark.asyncio
 async def test_existing_radar_entry_is_not_created_again(forecast_setup):
     """An existing radar entry, even a disabled one, is left alone."""
     hass = MagicMock()
@@ -197,8 +188,8 @@ async def test_existing_radar_entry_is_not_created_again(forecast_setup):
     hass.async_create_task.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_radar_entry_unloads_only_the_image():
+    """Test radar entry unloads only the image."""
     hass = MagicMock()
     hass.data = {}
     hass.config_entries.async_unload_platforms = AsyncMock(return_value=True)
@@ -214,9 +205,9 @@ def _device(device_id, name_by_user=None):
     return SimpleNamespace(id=device_id, name_by_user=name_by_user)
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("old_name", ["Home", None])
 async def test_renamed_entry_renames_the_devices_the_user_named(old_name):
+    """Test renamed entry renames the devices the user named."""
     hass = MagicMock()
     hass.data = {"hungaromet_weather_and_forecast_names": {"abc": old_name}}
     hass.config_entries.async_reload = AsyncMock()
@@ -244,8 +235,8 @@ async def test_renamed_entry_renames_the_devices_the_user_named(old_name):
     hass.config_entries.async_reload.assert_awaited_once_with("abc")
 
 
-@pytest.mark.asyncio
 async def test_unchanged_name_renames_nothing():
+    """Test unchanged name renames nothing."""
     hass = MagicMock()
     hass.data = {"hungaromet_weather_and_forecast_names": {"abc": "Home"}}
     hass.config_entries.async_reload = AsyncMock()

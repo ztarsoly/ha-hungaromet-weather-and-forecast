@@ -1,5 +1,8 @@
 """Tests for the scheduled feed updates in sensor.py."""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -37,8 +40,8 @@ def _hass(result):
     return SimpleNamespace(async_add_executor_job=AsyncMock(return_value=result))
 
 
-@pytest.mark.asyncio
 async def test_feed_update_downloads_once_and_updates_its_sensors():
+    """Test feed update downloads once and updates its sensors."""
     rows = [{"StationName": "Near"}]
     hass = _hass(({"average_t": 4.2, "average_r": 0.0}, rows))
     temperature = _added(_value(hass, "hourly", "t", 1.0))
@@ -64,8 +67,8 @@ async def test_feed_update_downloads_once_and_updates_its_sensors():
     daily_stations.async_write_ha_state.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_feed_update_keeps_value_when_feed_lacks_it():
+    """Test feed update keeps value when feed lacks it."""
     hass = _hass(({"average_t": None}, []))
     sensor = _added(_value(hass, "ten_minutes", "t", 3.0))
 
@@ -74,8 +77,8 @@ async def test_feed_update_keeps_value_when_feed_lacks_it():
     assert sensor.native_value == 3.0
 
 
-@pytest.mark.asyncio
 async def test_feed_update_skips_download_without_added_sensors():
+    """Test feed update skips download without added sensors."""
     hass = _hass(({}, []))
     sensor = _value(hass, "daily", "t", 1.0)
 
@@ -84,8 +87,8 @@ async def test_feed_update_skips_download_without_added_sensors():
     hass.async_add_executor_job.assert_not_awaited()
 
 
-@pytest.mark.asyncio
 async def test_feed_update_logs_download_errors(caplog):
+    """Test feed update logs download errors."""
     hass = SimpleNamespace(async_add_executor_job=AsyncMock(side_effect=OSError("down")))
     sensor = _added(_value(hass, "daily", "t", 1.0))
 
@@ -106,4 +109,5 @@ async def test_feed_update_logs_download_errors(caplog):
     ],
 )
 def test_entities_are_not_polled(entity):
+    """Test entities are not polled."""
     assert entity.should_poll is False

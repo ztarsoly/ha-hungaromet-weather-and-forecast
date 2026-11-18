@@ -1,15 +1,25 @@
 """Tests for filling the hours between met.hu's 6-hour forecast rows."""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
 from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from custom_components.hungaromet_weather_and_forecast import forecast
+from custom_components.hungaromet_weather_and_forecast import weather as w
 from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     HUNGARY_TZ,
+    ForecastData,
     ForecastPeriod,
+    _derive,
     bearing_to_direction,
+    current_period,
     find_current_hour,
     interpolate_hourly,
+    keep_dropped_row,
 )
 
 
@@ -35,6 +45,7 @@ def test_temperature_example():
 
 
 def test_values_are_rounded_to_two_decimals():
+    """Test values are rounded to two decimals."""
     hourly = interpolate_hourly(
         [_at(28, 13, temperature=16, pressure=1020), _at(28, 19, temperature=15, pressure=1022)]
     )
@@ -61,6 +72,7 @@ def test_period_values_belong_to_the_whole_period():
 
 
 def test_cloud_cover_changes_like_temperature():
+    """Test cloud cover changes like temperature."""
     hourly = interpolate_hourly(
         [_at(28, 13, cloud_cover=34), _at(28, 19, cloud_cover=80)]
     )
@@ -71,11 +83,13 @@ def test_cloud_cover_changes_like_temperature():
 
 
 def test_precipitation_split_rounds_to_two_decimals():
+    """Test precipitation split rounds to two decimals."""
     hourly = interpolate_hourly([_at(28, 13, precipitation=1.0), _at(28, 19)])
     assert hourly[0].precipitation == 0.17
 
 
 def test_wind_bearing_turns_the_short_way_round():
+    """Test wind bearing turns the short way round."""
     hourly = interpolate_hourly(
         [_at(28, 13, wind_bearing=330), _at(28, 19, wind_bearing=30)]
     )
@@ -99,10 +113,12 @@ def test_wind_bearing_turns_the_short_way_round():
 )
 def test_bearing_to_direction_uses_16_points(bearing, direction):
     # Like Home Assistant's weather cards: 12° is NNE (met.hu says "északi")
+    """Test bearing to direction uses 16 points."""
     assert bearing_to_direction(bearing) == direction
 
 
 def test_missing_values_keep_the_start_value():
+    """Test missing values keep the start value."""
     hourly = interpolate_hourly(
         [
             _at(28, 13, temperature=16, wind_bearing=None, wind_direction="nne"),
@@ -117,13 +133,17 @@ def test_missing_values_keep_the_start_value():
 
 
 def test_last_row_is_kept_as_one_hour():
-    (only,) = interpolate_hourly([_at(28, 13, temperature=16, precipitation=6.0)])
+    """Test last row is kept as one hour."""
+    hourly = interpolate_hourly([_at(28, 13, temperature=16, precipitation=6.0)])
+    assert len(hourly) == 1
+    only = hourly[0]
     assert only.temperature == 16
     assert only.precipitation == 1.0  # its 6-hour total spread per hour
 
 
 def test_rows_without_time_are_skipped():
-    assert interpolate_hourly([ForecastPeriod()]) == []
+    """Test rows without time are skipped."""
+    assert not interpolate_hourly([ForecastPeriod()])
 
 
 def test_daylight_saving_change_counts_real_hours():
@@ -139,6 +159,7 @@ def test_daylight_saving_change_counts_real_hours():
 
 
 def test_find_current_hour():
+    """Test find current hour."""
     hourly = interpolate_hourly([_at(28, 13, temperature=16), _at(28, 19, temperature=10)])
 
     now = datetime(2026, 10, 28, 15, 40, tzinfo=HUNGARY_TZ)
@@ -147,9 +168,6 @@ def test_find_current_hour():
 
 
 def _data():
-    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
-        ForecastData,
-    )
 
     periods = [_at(28, 13, temperature=16), _at(28, 19, temperature=10)]
     hourly = interpolate_hourly(periods)
@@ -157,18 +175,12 @@ def _data():
 
 
 def test_current_period_without_any_rows():
-    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
-        current_period,
-    )
-
+    """Test current period without any rows."""
     assert current_period([], [], datetime(2026, 10, 28, 16, tzinfo=HUNGARY_TZ)) is None
 
 
 def test_hourly_forecast_starts_at_the_current_hour():
-    from unittest.mock import MagicMock, patch
-
-    from custom_components.hungaromet_weather_and_forecast import weather as w
-
+    """Test hourly forecast starts at the current hour."""
     data = _data()  # current hour 15:00
     coordinator = MagicMock(data=data, config_entry=MagicMock(entry_id="e1", title="X"))
     with patch.object(w.SingleCoordinatorWeatherEntity, "__init__", return_value=None):
@@ -186,11 +198,6 @@ def test_hourly_forecast_starts_at_the_current_hour():
 
 def _download(*rows, now):
     """A forecast as parsed from met.hu, with its hours worked out."""
-    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
-        ForecastData,
-        _derive,
-    )
-
     data = ForecastData(settlement="X", periods=list(rows))
     _derive(data, now)
     return data
@@ -198,10 +205,6 @@ def _download(*rows, now):
 
 def test_dropped_row_is_kept_from_the_previous_download():
     """At 17:22 met.hu has dropped the 13:00 row; 17:00 is still worked out."""
-    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
-        keep_dropped_row,
-    )
-
     now = datetime(2026, 10, 28, 17, 22, tzinfo=HUNGARY_TZ)
     previous = _download(
         _at(28, 13, temperature=16, temperature_max=16),
@@ -221,10 +224,7 @@ def test_dropped_row_is_kept_from_the_previous_download():
 
 
 def test_no_previous_download_leaves_the_forecast_unchanged():
-    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
-        keep_dropped_row,
-    )
-
+    """Test no previous download leaves the forecast unchanged."""
     now = datetime(2026, 10, 28, 17, 22, tzinfo=HUNGARY_TZ)
     new = _download(_at(28, 19, temperature=10), now=now)
     assert keep_dropped_row(new, None, now) is new
@@ -241,10 +241,7 @@ def test_no_previous_download_leaves_the_forecast_unchanged():
     ],
 )
 def test_only_running_or_todays_rows_are_kept(previous_rows):
-    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
-        keep_dropped_row,
-    )
-
+    """Test only running or today's rows are kept."""
     now = datetime(2026, 10, 28, 17, 22, tzinfo=HUNGARY_TZ)
     previous = _download(*previous_rows, now=now)
     new = _download(_at(28, 19, temperature=10), now=now)
@@ -256,10 +253,6 @@ def test_only_running_or_todays_rows_are_kept(previous_rows):
 
 def test_todays_minimum_and_maximum_survive_the_evening():
     """At 20:52 met.hu's table starts at 19:00; 07:00 and 13:00 are gone."""
-    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
-        keep_dropped_row,
-    )
-
     morning = datetime(2026, 10, 29, 10, 7, tzinfo=HUNGARY_TZ)
     previous = _download(
         _at(28, 19, temperature=12),  # yesterday's, ended at 01:00
@@ -284,15 +277,11 @@ def test_todays_minimum_and_maximum_survive_the_evening():
 
 
 def test_new_download_without_rows_is_left_alone():
-    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
-        ForecastData,
-        keep_dropped_row,
-    )
-
+    """Test new download without rows is left alone."""
     now = datetime(2026, 10, 28, 17, 22, tzinfo=HUNGARY_TZ)
     empty = ForecastData(settlement="X")
     previous = _download(_at(28, 13, temperature=16), now=now)
-    assert keep_dropped_row(empty, previous, now).periods == []
+    assert not keep_dropped_row(empty, previous, now).periods
     untimed = ForecastData(settlement="X", periods=[ForecastPeriod()])
     assert keep_dropped_row(untimed, previous, now).periods == [ForecastPeriod()]
 
@@ -319,10 +308,6 @@ def test_daily_forecast_starts_at_today_after_midnight():
 
 def test_ended_period_is_not_kept():
     """At 01:07 last evening's 19:00 row has ended, so it is not put back."""
-    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
-        keep_dropped_row,
-    )
-
     now = datetime(2026, 10, 29, 1, 7, tzinfo=HUNGARY_TZ)
     previous = _download(
         _at(28, 19, temperature=10),
@@ -335,12 +320,8 @@ def test_ended_period_is_not_kept():
 
     assert [p.forecast_time.hour for p in data.periods] == [1, 7]
 
-@pytest.mark.asyncio
 async def test_coordinator_keeps_the_dropped_row():
-    from unittest.mock import AsyncMock, MagicMock, patch
-
-    from custom_components.hungaromet_weather_and_forecast import forecast
-
+    """Test coordinator keeps the dropped row."""
     now = datetime(2026, 10, 28, 17, 22, tzinfo=HUNGARY_TZ)
     coordinator = object.__new__(forecast.ForecastCoordinator)
     coordinator.hass = MagicMock()
@@ -365,11 +346,6 @@ DEBRECEN_LOCATION = (47.543, 21.648)
 
 def _sun_day(month, day, conditions=("clear-night", "sunny", "sunny", "clear-night")):
     """A day's rows at 01:00, 07:00, 13:00 and 19:00, and the next day's first."""
-    from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
-        ForecastData,
-        _derive,
-    )
-
     rows = [
         ForecastPeriod(
             forecast_time=datetime(2026, month, day, hour, tzinfo=HUNGARY_TZ),
@@ -415,6 +391,7 @@ def test_clear_hours_stay_sunny_when_the_sun_sets_after_the_night_row():
 
 
 def test_only_clear_hours_follow_the_sun():
+    """Test only clear hours follow the sun."""
     data = _sun_day(11, 8, ("fog", "partlycloudy", "rainy", "cloudy"))
 
     conditions = _conditions(data)

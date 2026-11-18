@@ -1,8 +1,11 @@
 """Tests for the update schedules, retries and freshness checks."""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pandas as pd
 import pytest
@@ -16,7 +19,12 @@ from custom_components.hungaromet_weather_and_forecast.sensor import (
     _async_start_feed_schedules,
     _is_fresh,
 )
-from custom_components.hungaromet_weather_and_forecast.station_sensor import FEEDS, Measurement, StationQuery, StationSensor
+from custom_components.hungaromet_weather_and_forecast.station_sensor import (
+    FEEDS,
+    Measurement,
+    StationQuery,
+    StationSensor,
+)
 from custom_components.hungaromet_weather_and_forecast.weather_data import latest_observations
 
 RUN = datetime(2026, 10, 27, 8, 20, 59, tzinfo=UTC)
@@ -24,7 +32,6 @@ RUN = datetime(2026, 10, 27, 8, 20, 59, tzinfo=UTC)
 
 class FakeClock:
     """Capture scheduled callbacks so tests can fire them by hand."""
-
     def __init__(self, monkeypatch):
         self.tracked = []
         self.later = []
@@ -33,17 +40,19 @@ class FakeClock:
         monkeypatch.setattr(scheduler, "async_call_later", self.call_later)
 
     def track(self, hass, action, **pattern):
+        """Record a time pattern instead of tracking it."""
         self.tracked.append((action, pattern))
         return lambda: self.cancelled.append("schedule")
 
     def call_later(self, hass, delay, action):
+        """Record a delayed call instead of scheduling it."""
         handle = len(self.later)
         self.later.append((delay, action))
         return lambda: self.cancelled.append(f"retry{handle}")
 
 
-@pytest.mark.asyncio
 async def test_schedule_runs_job_without_retry_when_fresh(monkeypatch):
+    """Test schedule runs job without retry when fresh."""
     clock = FakeClock(monkeypatch)
     job = AsyncMock(return_value=True)
     RetryingSchedule(None, "test", job, timedelta(minutes=1), minute=5).start()
@@ -53,11 +62,11 @@ async def test_schedule_runs_job_without_retry_when_fresh(monkeypatch):
     await action(RUN)
 
     job.assert_awaited_once_with(RUN)
-    assert clock.later == []
+    assert not clock.later
 
 
-@pytest.mark.asyncio
 async def test_schedule_retries_with_same_run_time_until_fresh(monkeypatch):
+    """Test schedule retries with same run time until fresh."""
     clock = FakeClock(monkeypatch)
     job = AsyncMock(side_effect=[False, False, True])
     RetryingSchedule(None, "test", job, timedelta(minutes=10)).start()
@@ -73,8 +82,8 @@ async def test_schedule_retries_with_same_run_time_until_fresh(monkeypatch):
     assert len(clock.later) == 2
 
 
-@pytest.mark.asyncio
 async def test_next_scheduled_run_cancels_pending_retry(monkeypatch):
+    """Test next scheduled run cancels pending retry."""
     clock = FakeClock(monkeypatch)
     job = AsyncMock(return_value=False)
     RetryingSchedule(None, "test", job, timedelta(minutes=1)).start()
@@ -87,8 +96,8 @@ async def test_next_scheduled_run_cancels_pending_retry(monkeypatch):
     assert job.await_args_list[-1].args == (RUN + timedelta(minutes=5),)
 
 
-@pytest.mark.asyncio
 async def test_stop_cancels_schedule_and_retry(monkeypatch):
+    """Test stop cancels schedule and retry."""
     clock = FakeClock(monkeypatch)
     stop = RetryingSchedule(
         None, "test", AsyncMock(return_value=False), timedelta(minutes=1)
@@ -101,7 +110,6 @@ async def test_stop_cancels_schedule_and_retry(monkeypatch):
     assert clock.cancelled == ["retry0", "schedule"]
 
 
-@pytest.mark.asyncio
 async def test_disabled_polling_skips_scheduled_runs(monkeypatch):
     """System options: "Enable polling for updates" turned off."""
     clock = FakeClock(monkeypatch)
@@ -129,6 +137,7 @@ async def test_disabled_polling_skips_scheduled_runs(monkeypatch):
 
 
 def test_feed_schedules_follow_hungaromet_publishing():
+    """Test feed schedules follow HungaroMet publishing."""
     assert FEED_SCHEDULES == {
         "daily": ({"hour": 9, "minute": 35, "second": 59}, timedelta(hours=1)),
         "hourly": ({"minute": 20, "second": 59}, timedelta(minutes=10)),
@@ -148,11 +157,12 @@ def test_feed_schedules_follow_hungaromet_publishing():
     ],
 )
 def test_is_fresh(data_type, observed, scheduled_for, fresh):
+    """Test is fresh."""
     assert _is_fresh(data_type, observed, scheduled_for) is fresh
 
 
-@pytest.mark.asyncio
 async def test_feed_schedule_jobs_report_freshness(monkeypatch):
+    """Test feed schedule jobs report freshness."""
     clock = FakeClock(monkeypatch)
     hass = SimpleNamespace(
         async_add_executor_job=AsyncMock(return_value=({"time": "2026-10-25"}, []))
@@ -169,7 +179,7 @@ async def test_feed_schedule_jobs_report_freshness(monkeypatch):
     # Nothing added yet: no download and no retry
     await daily_run(datetime(2026, 10, 27, 9, 35, 59, tzinfo=UTC))
     hass.async_add_executor_job.assert_not_awaited()
-    assert clock.later == []
+    assert not clock.later
 
     # Stale daily data schedules a retry an hour later
     daily._added = True
@@ -182,6 +192,7 @@ async def test_feed_schedule_jobs_report_freshness(monkeypatch):
 
 
 def test_frame_time_and_freshness():
+    """Test frame time and freshness."""
     url = "https://x/radar_composite-refl2D_pscappi-20261027_0800.png"
     assert frame_time(url) == datetime(2026, 10, 27, 8, 0, tzinfo=UTC)
     assert frame_time("https://x/other.png") is None
@@ -192,8 +203,8 @@ def test_frame_time_and_freshness():
     assert not _frame_is_fresh(None, datetime(2026, 10, 27, 8, 5, 59, tzinfo=UTC))
 
 
-@pytest.mark.asyncio
 async def test_radar_failed_rebuild_keeps_previous_state():
+    """Test radar failed rebuild keeps previous state."""
     hass = SimpleNamespace(
         async_add_executor_job=AsyncMock(return_value=(None, None)), data={}, bus=MagicMock()
     )
@@ -208,6 +219,7 @@ async def test_radar_failed_rebuild_keeps_previous_state():
 
 
 def test_latest_observations_drops_late_corrections():
+    """Test latest observations drops late corrections."""
     df = pd.DataFrame({
         "Time": [202610270750, 202610270800, 202610270800],
         "StationName": ["Kismacs", "Kismacs", "Repulover"],

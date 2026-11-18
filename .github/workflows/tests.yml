@@ -1,32 +1,44 @@
 name: Tests
-permissions:
-  contents: read
 
 on:
   push:
-    branches: ["main"]
+    branches:
+      - main
   pull_request:
-    branches: ["main"]
+    branches:
+      - main
+  workflow_dispatch:
+  # Can be run by other workflows, e.g. before a release
+  workflow_call:
+
+permissions:
+  contents: read
 
 jobs:
-  tests:
+  pytest:
+    name: "Pytest"
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Checkout the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
-          python-version: "3.13"
+          python-version: "3.14"
+          cache: "pip"
+          cache-dependency-path: requirements_test.txt
 
       - name: Install dependencies
+        id: install
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements_test.txt
 
       - name: Run pylint
-        run: pylint custom_components/hungaromet_weather_and_forecast/
+        run: python -m pylint custom_components tests
 
-      - name: Run pytest with coverage
-        run: pytest --cov
+      # Run the tests even if pylint failed, so both results are visible.
+      - name: Run tests with coverage
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: python -m pytest

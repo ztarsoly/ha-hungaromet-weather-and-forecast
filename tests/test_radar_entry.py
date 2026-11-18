@@ -1,9 +1,12 @@
 """Tests for the automatically created national radar entry."""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
+import json
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 from custom_components.hungaromet_weather_and_forecast.config_flow import (
     HungarometConfigFlow,
@@ -12,13 +15,14 @@ from custom_components.hungaromet_weather_and_forecast.scope import is_radar_ent
 
 
 def test_is_radar_entry():
+    """Test is radar entry."""
     assert is_radar_entry(SimpleNamespace(data={"entry_type": "radar"}))
     assert not is_radar_entry(SimpleNamespace(data={}))
     assert not is_radar_entry(SimpleNamespace(data={"distance_km": 20}))
 
 
-@pytest.mark.asyncio
 async def test_import_step_creates_the_radar_entry_once():
+    """Test import step creates the radar entry once."""
     flow = HungarometConfigFlow()
     flow.async_set_unique_id = AsyncMock()
     flow._abort_if_unique_id_configured = MagicMock()
@@ -34,6 +38,7 @@ async def test_import_step_creates_the_radar_entry_once():
 
 
 def test_only_location_entries_have_options():
+    """Test only location entries have options."""
     radar = SimpleNamespace(data={"entry_type": "radar"})
     location = SimpleNamespace(data={"distance_km": 20})
     assert HungarometConfigFlow.async_supports_options_flow(radar) is False
@@ -41,9 +46,7 @@ def test_only_location_entries_have_options():
 
 
 def test_radar_device_names():
-    import json
-    from pathlib import Path
-
+    """Test radar device names."""
     root = Path(__file__).resolve().parents[1] / (
         "custom_components/hungaromet_weather_and_forecast/translations"
     )

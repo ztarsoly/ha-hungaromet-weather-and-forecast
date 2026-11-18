@@ -1,12 +1,14 @@
 """Tests for the regional radar image from met.hu's quadrant images."""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import requests
 
-import custom_components.hungaromet_weather_and_forecast as integration
 from custom_components.hungaromet_weather_and_forecast import national_radar, radar
 from custom_components.hungaromet_weather_and_forecast import regional_radar as rr
 from custom_components.hungaromet_weather_and_forecast.radar import frame_time
@@ -30,6 +32,7 @@ PAGE = (
     ],
 )
 def test_quadrant_for(lat, lon, quadrant):
+    """Test quadrant for."""
     assert rr.quadrant_for(lat, lon) == quadrant
 
 
@@ -41,6 +44,7 @@ def test_radar_starts_without_an_animation():
 
 
 def test_radar_base_needs_a_frame_listing():
+    """Test radar base needs a frame listing."""
     hass = SimpleNamespace(data={}, bus=MagicMock())
     base = radar.RadarImage(hass, "base_device_base")
     assert base.unique_id == "base_device_base"
@@ -64,6 +68,7 @@ def test_saved_gifs_are_removed(tmp_path):
 
 
 def test_folder_with_other_files_is_kept(tmp_path):
+    """Test folder with other files is kept."""
     legacy = tmp_path / "www"
     legacy.mkdir()
     (legacy / "radar_animation.gif").write_bytes(b"gif")
@@ -74,16 +79,19 @@ def test_folder_with_other_files_is_kept(tmp_path):
 
 
 def test_frame_time_reads_met_hu_jpg_names():
+    """Test frame time reads met hu jpg names."""
     assert frame_time("https://www.met.hu/img/RccH/RccH20261028_1150.jpg").hour == 11
 
 
 def test_latest_frame_urls_default_to_six():
+    """Test latest frame urls default to six."""
     with patch.object(rr.requests, "get", return_value=MagicMock(text=PAGE)):
         urls = rr.latest_frame_urls("ne")
     assert [u[-8:-4] for u in urls] == ["1130", "1135", "1140", "1145", "1150", "1155"]
 
 
 def test_latest_frame_urls():
+    """Test latest frame URLs."""
     response = MagicMock(text=PAGE)
     with patch.object(rr.requests, "get", return_value=response) as get:
         urls = rr.latest_frame_urls("ne", count=3)
@@ -106,12 +114,14 @@ def _regional():
 
 
 def test_regional_radar_name_in_hungarian():
+    """Test regional radar name in hungarian."""
     entity = _regional()
     entity.hass.config = SimpleNamespace(language="hu")
     assert entity.name == "Regionális radarkép"
 
 
 def test_regional_radar_entity():
+    """Test regional radar entity."""
     entity = _regional()
     assert entity.unique_id == "e1_hungaromet_regional_radar"
     # In Home Assistant's language (English by default)
@@ -132,6 +142,7 @@ def test_regional_radar_entity():
 
 
 def test_regional_radar_lists_its_own_quadrant():
+    """Test regional radar lists its own quadrant."""
     entity = _regional()
     with (
         patch.object(rr, "latest_frame_urls", return_value=["a.jpg", "b.jpg"]) as listing,
@@ -143,13 +154,13 @@ def test_regional_radar_lists_its_own_quadrant():
 
 
 def test_regional_radar_network_error(caplog):
+    """Test regional radar network error."""
     entity = _regional()
     with patch.object(rr, "latest_frame_urls", side_effect=requests.ConnectionError("down")):
         assert entity._rebuild_gif() == (None, None)
     assert "Network error listing Regional radar frames: down" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_incomplete_animation_is_shown_but_retried():
     """A frame missing: the GIF is shown, but the run is not counted as done."""
     entity = _regional()
@@ -169,8 +180,8 @@ async def test_incomplete_animation_is_shown_but_retried():
     entity.async_write_ha_state.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_failed_rebuild_keeps_the_last_animation():
+    """Test failed rebuild keeps the last animation."""
     entity = _regional()
     entity._added = True
     entity._frames._gif = b"old"

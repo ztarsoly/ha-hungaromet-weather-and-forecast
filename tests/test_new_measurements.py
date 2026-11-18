@@ -8,7 +8,12 @@ import pytest
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.util import dt as dt_util
 
-from custom_components.hungaromet_weather_and_forecast.station_sensor import FEEDS, Measurement, StationQuery, StationSensor
+from custom_components.hungaromet_weather_and_forecast.station_sensor import (
+    FEEDS,
+    Measurement,
+    StationQuery,
+    StationSensor,
+)
 from custom_components.hungaromet_weather_and_forecast.weather_data import (
     WIND_DIRECTIONS,
     calculate_mean_values,
@@ -30,11 +35,13 @@ def _hass():
 
 
 def test_circular_mean_wraps_around_north():
+    """Test circular mean wraps around north."""
     assert circular_mean([350, 10]) == pytest.approx(0, abs=1e-9)
     assert circular_mean([80, 100]) == pytest.approx(90)
 
 
 def test_direction_columns_use_circular_mean():
+    """Test direction columns use circular mean."""
     df = pd.DataFrame({"fxd": [355, 5], "fx": [355, 5]})
 
     means = calculate_mean_values(df, ["fxd", "fx", "missing"])
@@ -45,6 +52,7 @@ def test_direction_columns_use_circular_mean():
 
 
 def test_clean_data_treats_text_minus_999_as_missing():
+    """Test clean data treats text minus 999 as missing."""
     df = pd.DataFrame({"fud": ["DDNy", "-999"], "t": [1.0, -999]})
 
     result = clean_data(df)
@@ -54,6 +62,7 @@ def test_clean_data_treats_text_minus_999_as_missing():
 
 
 def test_prevailing_direction_takes_most_common_nearest_first_on_ties():
+    """Test prevailing direction takes most common nearest first on ties."""
     df = pd.DataFrame({"fud": ["Ny", "DDNy", "DDNy", "Ny", "É", None, "?"]})
     assert prevailing_direction(df) == "w"
 
@@ -64,11 +73,13 @@ def test_prevailing_direction_takes_most_common_nearest_first_on_ties():
 
 
 def test_every_hungarian_compass_point_has_an_english_key():
+    """Test every hungarian compass point has an english key."""
     assert len(WIND_DIRECTIONS) == 16
     assert len(set(WIND_DIRECTIONS.values())) == 16
 
 
 def test_nearest_value_skips_missing():
+    """Test nearest value skips missing."""
     df = pd.DataFrame({"fxdat": [None, " 12:06", "23:50"]})
 
     assert nearest_value(df, "fxdat") == "12:06"
@@ -76,6 +87,7 @@ def test_nearest_value_skips_missing():
 
 
 def test_ten_minute_gust_time_is_local(monkeypatch):
+    """Test ten minute gust time is local."""
     monkeypatch.setattr(
         dt_util, "DEFAULT_TIME_ZONE", dt_util.get_time_zone("Europe/Budapest")
     )
@@ -102,6 +114,7 @@ def test_ten_minute_gust_time_is_local(monkeypatch):
     ],
 )
 def test_ten_minute_gust_time_at_period_edges(monkeypatch, time, fxm, fxs, expected):
+    """Test ten minute gust time at period edges."""
     monkeypatch.setattr(
         dt_util, "DEFAULT_TIME_ZONE", dt_util.get_time_zone("Europe/Budapest")
     )
@@ -112,6 +125,7 @@ def test_ten_minute_gust_time_at_period_edges(monkeypatch, time, fxm, fxs, expec
 
 @patch("custom_components.hungaromet_weather_and_forecast.weather_data.fetch_data")
 def test_daily_feed_returns_new_measurements(mock_fetch):
+    """Test daily feed returns new measurements."""
     mock_fetch.return_value = pd.DataFrame({
         "Time": [20261025, 20261025],
         "StationNumber": [1, 2],
@@ -140,6 +154,7 @@ def test_daily_feed_returns_new_measurements(mock_fetch):
 
 @patch("custom_components.hungaromet_weather_and_forecast.weather_data.fetch_data")
 def test_ten_minute_feed_keeps_gust_columns_in_raw_data(mock_fetch):
+    """Test ten minute feed keeps gust columns in raw data."""
     mock_fetch.return_value = pd.DataFrame({
         "Time": [202610270920],
         "StationNumber": [1],
@@ -161,6 +176,7 @@ def test_ten_minute_feed_keeps_gust_columns_in_raw_data(mock_fetch):
 
 
 def test_prevailing_direction_sensor_is_a_translated_enum():
+    """Test prevailing direction sensor is a translated enum."""
     sensor = StationSensor(
         SimpleNamespace(), FEEDS["daily"], Measurement("U", "fud"), "ssw", StationQuery()
     )
@@ -172,6 +188,7 @@ def test_prevailing_direction_sensor_is_a_translated_enum():
 
 
 def test_other_daily_sensors_are_not_enums():
+    """Test other daily sensors are not enums."""
     sensor = StationSensor(
         SimpleNamespace(), FEEDS["daily"], Measurement("P", "p0", "hPa"), 1014.0, StationQuery()
     )

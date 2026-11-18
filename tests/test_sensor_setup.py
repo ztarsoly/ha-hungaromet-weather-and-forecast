@@ -1,13 +1,18 @@
 """Tests for setting up an entry's weather station and forecast sensors."""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
 from collections import Counter
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from custom_components.hungaromet_weather_and_forecast import sensor
-from custom_components.hungaromet_weather_and_forecast.station_sensor import StationQuery, StationSensor, StationsSensor
+from custom_components.hungaromet_weather_and_forecast.station_sensor import (
+    StationQuery,
+    StationSensor,
+    StationsSensor,
+)
 from custom_components.hungaromet_weather_and_forecast.weather_data import (
     process_daily_data,
     process_hourly_data,
@@ -19,7 +24,6 @@ STATIONS = [{"StationNumber": 1, "StationName": "Pécs"}]
 
 class FeedData(dict):
     """A feed's values: 1.5 for every measurement that is not given."""
-
     def get(self, key, default=None):
         return super().get(key, 1.5)
 
@@ -51,8 +55,8 @@ async def _set_up(hass, entry):
     return added, schedules, schedule
 
 
-@pytest.mark.asyncio
 async def test_setup_adds_every_station_sensor():
+    """Test setup adds every station sensor."""
     hass = _hass()
     added, _, _ = await _set_up(hass, _entry())
 
@@ -78,8 +82,8 @@ async def test_setup_adds_every_station_sensor():
     ]
 
 
-@pytest.mark.asyncio
 async def test_setup_uses_the_entry_settings():
+    """Test setup uses the entry settings."""
     hass = _hass()
     entry = _entry(
         {"distance_km": 20, "location": "home"},
@@ -99,8 +103,8 @@ async def test_setup_uses_the_entry_settings():
     }
 
 
-@pytest.mark.asyncio
 async def test_setup_adds_the_forecast_sensors_first():
+    """Test setup adds the forecast sensors first."""
     hass = _hass(forecast=MagicMock())
     forecast = hass.data["hungaromet_weather_and_forecast"]["e1"]
     with (
@@ -115,8 +119,8 @@ async def test_setup_adds_the_forecast_sensors_first():
     assert len(added) == 2
 
 
-@pytest.mark.asyncio
 async def test_setup_starts_the_feed_schedules():
+    """Test setup starts the feed schedules."""
     entry = _entry()
     _, schedules, schedule = await _set_up(_hass(), entry)
 
@@ -128,8 +132,8 @@ async def test_setup_starts_the_feed_schedules():
     assert unloads[1:] == [schedule.start.return_value] * 3
 
 
-@pytest.mark.asyncio
 async def test_update_service_updates_every_feed():
+    """Test update service updates every feed."""
     hass = _hass()
     await _set_up(hass, _entry())
     (updater,) = hass.data["hungaromet_weather_and_forecast_updaters"].values()

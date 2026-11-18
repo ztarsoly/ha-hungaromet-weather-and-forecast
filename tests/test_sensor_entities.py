@@ -1,5 +1,8 @@
 """Tests for the weather station sensors and the national radar image entity."""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -42,10 +45,12 @@ def _added(entity):
 
 
 class DummyBus:
+    """An event bus that records the listeners."""
     def __init__(self):
         self.calls = []
 
     def async_listen_once(self, event, callback):
+        """Record a listener."""
         self.calls.append((event, callback))
 
 
@@ -57,6 +62,7 @@ def _radar_hass(**extra):
 
 
 def test_feeds_and_their_devices():
+    """Test feeds and their devices."""
     assert {key: feed.process for key, feed in FEEDS.items()} == {
         "daily": process_daily_data,
         "hourly": process_hourly_data,
@@ -68,7 +74,13 @@ def test_feeds_and_their_devices():
 @pytest.mark.parametrize(
     ("feed", "name", "unique_id", "device_id", "model"),
     [
-        ("daily", "Napi párolgás", "hungaromet_weather_napi_párolgás", "hungaromet_weather", "Daily weather"),
+        (
+            "daily",
+            "Napi párolgás",
+            "hungaromet_weather_napi_párolgás",
+            "hungaromet_weather",
+            "Daily weather",
+        ),
         (
             "hourly",
             "Órás pillanatnyi hőmérséklet",
@@ -86,6 +98,7 @@ def test_feeds_and_their_devices():
     ],
 )
 def test_ids_and_devices_stay_as_before(feed, name, unique_id, device_id, model):
+    """Test ids and devices stay as before."""
     sensor = _sensor(feed, name=name)
     assert sensor.unique_id == unique_id
     assert sensor.device_info["identifiers"] == {("hungaromet_weather_and_forecast", device_id)}
@@ -95,6 +108,7 @@ def test_ids_and_devices_stay_as_before(feed, name, unique_id, device_id, model)
 
 
 def test_value_sensor_values():
+    """Test value sensor values."""
     sensor = _sensor()
     assert sensor.native_value == 1.23
     assert sensor.native_unit_of_measurement == "°C"
@@ -117,6 +131,7 @@ def test_value_sensor_values():
     ],
 )
 def test_measurement_times(feed, value, expected, caplog):
+    """Test measurement times."""
     sensor = _sensor(feed, "time", value, None)
     assert sensor.device_class == (
         SensorDeviceClass.DATE if feed == "daily" else SensorDeviceClass.TIMESTAMP
@@ -128,6 +143,7 @@ def test_measurement_times(feed, value, expected, caplog):
 
 
 def test_prevailing_wind_direction_is_an_enum():
+    """Test prevailing wind direction is an enum."""
     sensor = _sensor("daily", "fud", "ssw", None)
     assert sensor.device_class == SensorDeviceClass.ENUM
     assert "ssw" in sensor.options
@@ -151,23 +167,27 @@ def test_prevailing_wind_direction_is_an_enum():
     ],
 )
 def test_station_sensor_device_classes(key, unit, device_class):
+    """Test station sensor device classes."""
     for feed in FEEDS:
         assert _sensor(feed, key, 1.0, unit).device_class == device_class
 
 
 def test_numeric_station_sensors_show_one_decimal():
+    """Test numeric station sensors show one decimal."""
     assert _sensor().suggested_display_precision == 1
     assert _sensor(key="fud", value="N", unit=None).suggested_display_precision is None
     assert _sensor(key="time", value=None, unit=None).suggested_display_precision is None
 
 
 def test_reading_prefers_the_key_then_its_average():
+    """Test reading prefers the key then its average."""
     assert reading({"t": 1, "average_t": 2}, "t") == 1
     assert reading({"average_t": 2}, "t") == 2
     assert reading({}, "t") is None
 
 
 def test_stations_sensor():
+    """Test stations sensor."""
     rows = [
         {
             "StationNumber": 1,
@@ -189,7 +209,13 @@ def test_stations_sensor():
     assert sensor.native_value == 1
     assert sensor.extra_state_attributes == {
         "stations": [
-            {"StationNumber": 1, "StationName": "A", "Latitude": 47.5, "Longitude": 19.0, "Elevation": 100}
+            {
+                "StationNumber": 1,
+                "StationName": "A",
+                "Latitude": 47.5,
+                "Longitude": 19.0,
+                "Elevation": 100,
+            }
         ],
         "raw_data": rows,
     }
@@ -198,9 +224,11 @@ def test_stations_sensor():
     assert sensor.extra_state_attributes == {"stations": [], "raw_data": []}
 
 
-@pytest.mark.asyncio
 async def test_sensors_update_only_once_added():
-    hass = SimpleNamespace(async_add_executor_job=AsyncMock(return_value=({"average_t": 4.5}, ["S"])))
+    """Test sensors update only once added."""
+    hass = SimpleNamespace(
+        async_add_executor_job=AsyncMock(return_value=({"average_t": 4.5}, ["S"]))
+    )
     value = _sensor(hass=hass)
     stations = StationsSensor(hass, FEEDS["hourly"], [], QUERY)
 
@@ -214,12 +242,18 @@ async def test_sensors_update_only_once_added():
     for sensor in (_added(value), _added(stations)):
         await sensor.async_update()
         sensor.async_write_ha_state.assert_called_once()
-    assert hass.async_add_executor_job.await_args.args == (process_hourly_data, hass, 35, (47.5, 21.6))
+    assert hass.async_add_executor_job.await_args.args == (
+        process_hourly_data,
+        hass,
+        35,
+        (47.5, 21.6),
+    )
     assert value.native_value == 4.5
     assert stations.native_value == 1
 
 
 def test_feed_sensors_must_say_what_they_show():
+    """Test feed sensors must say what they show."""
     with pytest.raises(NotImplementedError):
         FeedSensor(None, FEEDS["daily"], QUERY).show({}, [])
 
@@ -227,8 +261,8 @@ def test_feed_sensors_must_say_what_they_show():
 # National radar image
 
 
-@pytest.mark.asyncio
 async def test_radar_image_updates_only_when_added():
+    """Test radar image updates only when added."""
     hass = _radar_hass(async_add_executor_job=AsyncMock(return_value=("x.png", b"gif data")))
     image = HungarometRadarImage(hass)
     image.async_write_ha_state = MagicMock()
@@ -248,8 +282,8 @@ async def test_radar_image_updates_only_when_added():
     image.async_write_ha_state.assert_called_once()
 
 
-@pytest.mark.asyncio
 async def test_radar_image_schedules_and_unsubscribes(monkeypatch):
+    """Test radar image schedules and unsubscribes."""
     captured = {}
 
     def fake_track(hass, callback, **kwargs):
@@ -279,7 +313,7 @@ async def test_radar_image_schedules_and_unsubscribes(monkeypatch):
     assert len(tasks) == 1
 
     # The GIF is built straight away, in the background, with the usual retry
-    ((first_update, name),) = tasks
+    first_update, name = tasks[0]
     assert "first update" in name
     await first_update
     hass.async_add_executor_job.assert_awaited_once_with(image._rebuild_gif)
@@ -294,8 +328,8 @@ async def test_radar_image_schedules_and_unsubscribes(monkeypatch):
     assert registered == {}
 
 
-@pytest.mark.asyncio
 async def test_radar_image_shows_the_last_animation():
+    """Test radar image shows the last animation."""
     image = HungarometRadarImage(_radar_hass())
     assert image.image() is None
     assert await image.async_image() is None
@@ -308,6 +342,7 @@ async def test_radar_image_shows_the_last_animation():
 
 
 def test_radar_image_names_and_ids():
+    """Test radar image names and ids."""
     hass = _radar_hass()
     image = HungarometRadarImage(hass)
 
@@ -328,8 +363,8 @@ def test_radar_image_names_and_ids():
     assert image.extra_state_attributes == {"last_updated": None, "update_counter": 0}
 
 
-@pytest.mark.asyncio
 async def test_radar_update_entity_rebuilds_the_animation():
+    """Test radar update entity rebuilds the animation."""
     image = HungarometRadarImage(_radar_hass())
     image.async_update_data = AsyncMock()
 
@@ -338,8 +373,8 @@ async def test_radar_update_entity_rebuilds_the_animation():
     image.async_update_data.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_radar_scheduled_update_reports_freshness(monkeypatch):
+    """Test radar scheduled update reports freshness."""
     image = HungarometRadarImage(_radar_hass())
     frame = "https://x/radar_composite-refl2D_pscappi-20261027_0800.png"
     called = AsyncMock(return_value=frame)

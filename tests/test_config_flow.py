@@ -36,8 +36,8 @@ def _flow(handler, validated, module=config_flow):
     )
 
 
-@pytest.mark.asyncio
 async def test_setup_form_starts_empty():
+    """Test setup form starts empty."""
     flow = HungarometConfigFlow()
     with _flow(flow, (None, {})) as validate:
         form = await flow.async_step_user()
@@ -53,8 +53,8 @@ async def test_setup_form_starts_empty():
     }
 
 
-@pytest.mark.asyncio
 async def test_setup_form_creates_the_entry():
+    """Test setup form creates the entry."""
     flow = HungarometConfigFlow()
     user_input = {
         "name": "Pécs",
@@ -78,8 +78,8 @@ async def test_setup_form_creates_the_entry():
     }
 
 
-@pytest.mark.asyncio
 async def test_setup_form_without_forecast_uses_the_defaults():
+    """Test setup form without forecast uses the defaults."""
     flow = HungarometConfigFlow()
     with _flow(flow, (None, {})):
         result = await flow.async_step_user({"name": "Otthon"})
@@ -92,8 +92,8 @@ async def test_setup_form_without_forecast_uses_the_defaults():
     }
 
 
-@pytest.mark.asyncio
 async def test_setup_form_shows_errors_and_keeps_the_input():
+    """Test setup form shows errors and keeps the input."""
     flow = HungarometConfigFlow()
     user_input = {
         "name": "Pécs",
@@ -111,6 +111,7 @@ async def test_setup_form_shows_errors_and_keeps_the_input():
 
 
 def test_location_entries_get_the_configure_form():
+    """Test location entries get the configure form."""
     entry = SimpleNamespace(data={"distance_km": 20})
     assert isinstance(
         HungarometConfigFlow.async_get_options_flow(entry), HungaroMetOptionsFlowHandler
@@ -118,6 +119,7 @@ def test_location_entries_get_the_configure_form():
 
 
 def test_flows_from_the_same_source_are_duplicates():
+    """Test flows from the same source are duplicates."""
     user, other_user, imported = (HungarometConfigFlow() for _ in range(3))
     for flow, source in ((user, "user"), (other_user, "user"), (imported, "import")):
         flow.context = {"source": source}
@@ -136,7 +138,6 @@ def _entry(data=None, options=None, title="Pécs"):
     return SimpleNamespace(title=title, data=data or {"distance_km": 20}, options=options or {})
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("data", "options", "expected"),
     [
@@ -157,9 +158,10 @@ def _entry(data=None, options=None, title="Pécs"):
     ],
 )
 async def test_configure_form_shows_the_current_settings(data, options, expected):
+    """Test configure form shows the current settings."""
     entry = SimpleNamespace(title="Pécs", data=data, options=options)
     handler, flow, current = _configure(entry, (None, {}))
-    with flow as validate, current:
+    with current, flow as validate:
         form = await handler.async_step_init()
 
     validate.assert_not_awaited()
@@ -167,8 +169,8 @@ async def test_configure_form_shows_the_current_settings(data, options, expected
     assert _form_defaults(form) == {"name": "Pécs", **expected}
 
 
-@pytest.mark.asyncio
 async def test_configure_form_saves_the_settings():
+    """Test configure form saves the settings."""
     entry = _entry()
     user_input = {
         "name": "Pécs",
@@ -189,8 +191,8 @@ async def test_configure_form_saves_the_settings():
     handler.hass.config_entries.async_update_entry.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_configure_form_renames_the_entry():
+    """Test configure form renames the entry."""
     entry = _entry({"name": "Pécs", "distance_km": 20})
     user_input = {"name": " Mecsek ", "distance_km": 20, "location": "home"}
     handler, flow, current = _configure(entry, (None, {}))
@@ -203,8 +205,8 @@ async def test_configure_form_renames_the_entry():
     )
 
 
-@pytest.mark.asyncio
 async def test_configure_form_needs_a_name():
+    """Test configure form needs a name."""
     user_input = {"name": "  ", "distance_km": 20, "forecast_settlement": "", "location": "home"}
     handler, flow, current = _configure(_entry(), (None, {}))
     with flow, current:
@@ -214,8 +216,8 @@ async def test_configure_form_needs_a_name():
     handler.hass.config_entries.async_update_entry.assert_not_called()
 
 
-@pytest.mark.asyncio
 async def test_configure_form_shows_errors_and_keeps_the_input():
+    """Test configure form shows errors and keeps the input."""
     user_input = {
         "name": "Pécs",
         "distance_km": 40.0,

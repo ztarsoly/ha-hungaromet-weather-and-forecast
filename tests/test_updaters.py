@@ -5,7 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.hungaromet_weather_and_forecast import updaters
+from custom_components.hungaromet_weather_and_forecast import async_setup, updaters
 from custom_components.hungaromet_weather_and_forecast import weather as weather_platform
 from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     ForecastData,
@@ -18,6 +18,7 @@ ENTRY = SimpleNamespace(entry_id="e1", title="HungaroMet")
 
 
 def test_register_and_remove_updaters():
+    """Test register and remove updaters."""
     hass = SimpleNamespace(data={})
     first, second = AsyncMock(), AsyncMock()
 
@@ -31,6 +32,7 @@ def test_register_and_remove_updaters():
 
 
 def test_removing_does_not_drop_a_newer_updater_with_the_same_key():
+    """Test removing does not drop a newer updater with the same key."""
     hass = SimpleNamespace(data={})
     old, new = AsyncMock(), AsyncMock()
     remove_old = updaters.async_register_updater(hass, "radar", old)
@@ -41,8 +43,8 @@ def test_removing_does_not_drop_a_newer_updater_with_the_same_key():
     assert hass.data[updaters.UPDATERS] == {"radar": new}
 
 
-@pytest.mark.asyncio
 async def test_update_all_runs_everything_even_after_a_failure(caplog):
+    """Test update all runs everything even after a failure."""
     hass = SimpleNamespace(data={})
     feeds = AsyncMock(side_effect=RuntimeError("met.hu down"))
     forecast = AsyncMock()
@@ -58,13 +60,13 @@ async def test_update_all_runs_everything_even_after_a_failure(caplog):
     assert "Updating feeds failed" in caplog.text
 
 
-@pytest.mark.asyncio
 async def test_update_all_with_nothing_registered():
+    """Test update all with nothing registered."""
     await updaters.async_update_all(SimpleNamespace(data={}))
 
 
-@pytest.mark.asyncio
 async def test_update_service_runs_every_updater():
+    """Test update service runs every updater."""
     hass = MagicMock(data={})
     update = AsyncMock()
     updaters.async_register_updater(hass, "x", update)
@@ -77,10 +79,8 @@ async def test_update_service_runs_every_updater():
     update.assert_awaited_once()
 
 
-@pytest.mark.asyncio
 async def test_setup_registers_the_update_service():
-    from custom_components.hungaromet_weather_and_forecast import async_setup
-
+    """Test setup registers the update service."""
     hass = MagicMock(async_add_executor_job=AsyncMock())
     with patch(
         "custom_components.hungaromet_weather_and_forecast.async_register_update_service"
@@ -104,6 +104,7 @@ def _coordinator(data, success):
     ],
 )
 def test_forecast_entities_keep_their_last_values(data, success, available):
+    """Test forecast entities keep their last values."""
     coordinator = _coordinator(data, success)
     assert all(s.available is available for s in forecast_sensors(coordinator))
 

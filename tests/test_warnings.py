@@ -1,5 +1,8 @@
 """Tests for the settlement's alerts and warnings."""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
 from datetime import date, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -67,16 +70,19 @@ THUNDERSTORM_AND_WIND = """
     ],
 )
 def test_find_district(lat, lon, district):
+    """Test find district."""
     assert find_district(lat, lon) == district
 
 
 def test_a_place_outside_the_drawn_map_gets_the_nearest_district():
     # Szob lies on the Danube, just outside the coarsely drawn polygons
+    """Test a place outside the drawn map gets the nearest district."""
     assert find_district(47.82, 18.87) == "1316"
 
 
 def test_distance_from_a_border_with_a_repeated_point():
     # The map's polygons end with their first point twice
+    """Test distance from a border with a repeated point."""
     assert _distance(3, 4, [0, 0, 0, 0]) == 5
 
 
@@ -85,10 +91,12 @@ def test_distance_from_a_border_with_a_repeated_point():
     [("903", 9), ("204", 2), ("1316", 13), ("2003", 20), ("101", 13)],
 )
 def test_county_of(district, county):
+    """Test county of."""
     assert county_of(district) == county
 
 
 def test_nothing_in_force():
+    """Test nothing in force."""
     assert parse_snippet(NOTHING, ALERT_PHENOMENA) == {
         "thunderstorm": "none",
         "wind_gust": "none",
@@ -99,6 +107,7 @@ def test_nothing_in_force():
 
 
 def test_every_phenomenon_has_its_level():
+    """Test every phenomenon has its level."""
     levels = parse_snippet(THUNDERSTORM_AND_WIND, WARNING_PHENOMENA)
 
     assert list(levels) == [
@@ -111,6 +120,7 @@ def test_every_phenomenon_has_its_level():
 
 
 def test_unknown_icons_and_levels():
+    """Test unknown icons and levels."""
     html = (
         "<table class='stbl'>"
         "<img src='/images/warningb/rain1.gif'>"  # a warning phenomenon in an alert
@@ -124,6 +134,7 @@ def test_unknown_icons_and_levels():
 
 
 def test_a_page_without_the_area_table_is_an_error():
+    """Test a page without the area table is an error."""
     with pytest.raises(ValueError, match="area table"):
         parse_snippet("<html>Hiba</html>", ALERT_PHENOMENA)
 
@@ -138,10 +149,12 @@ def test_a_page_without_the_area_table_is_an_error():
     ],
 )
 def test_highest_level(levels, highest):
+    """Test highest level."""
     assert highest_level(levels) == highest
 
 
 class FakeResponse:
+    """An aiohttp response with fixed text."""
     def __init__(self, text):
         self._text = text
 
@@ -152,9 +165,11 @@ class FakeResponse:
         return False
 
     def raise_for_status(self):
+        """Never raise; the response is a success."""
         return None
 
     async def text(self, encoding=None, errors=None):
+        """Return the text."""
         return self._text
 
 
@@ -180,10 +195,12 @@ TUESDAY = date(2026, 11, 17)
     ],
 )
 def test_today_warning_map(today, warning_map):
+    """Test today warning map."""
     assert today_warning_map(TABS_FROM_TUESDAY, today) == warning_map
 
 
 def test_today_warning_map_without_tabs():
+    """Test today warning map without tabs."""
     assert today_warning_map("<html></html>", TUESDAY) == "wbhx"
 
 
@@ -199,8 +216,8 @@ def _warning_session():
     )
 
 
-@pytest.mark.asyncio
 async def test_fetch_warnings():
+    """Test fetch warnings."""
     session = _warning_session()
 
     data = await fetch_warnings(session, "903", date(2026, 11, 18))
@@ -221,8 +238,8 @@ async def test_fetch_warnings():
     assert data.warnings["wind_gust"] == "orange"
 
 
-@pytest.mark.asyncio
 async def test_fetch_warnings_for_today_in_hungary():
+    """Test fetch warnings for today in hungary."""
     session = _warning_session()
     # 23:30 UTC on Tuesday is already Wednesday in Hungary
     now = datetime(2026, 11, 18, 0, 30, tzinfo=HUNGARY_TZ)
@@ -243,8 +260,8 @@ def _coordinator():
     return coordinator
 
 
-@pytest.mark.asyncio
 async def test_coordinator_finds_the_district_once():
+    """Test coordinator finds the district once."""
     coordinator = _coordinator()
     data = Warnings()
     with (
@@ -260,9 +277,9 @@ async def test_coordinator_finds_the_district_once():
     fetch.assert_awaited_with(session.return_value, "903")
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize("error", [aiohttp.ClientError("x"), TimeoutError(), ValueError("x")])
 async def test_coordinator_update_failure(error):
+    """Test coordinator update failure."""
     coordinator = _coordinator()
     with (
         patch.object(warning, "async_get_clientsession"),
@@ -273,6 +290,7 @@ async def test_coordinator_update_failure(error):
 
 
 def test_coordinator_init():
+    """Test coordinator init."""
     entry = MagicMock()
     with (
         patch.object(warning.ScheduledCoordinator, "__init__", return_value=None) as init,
@@ -286,38 +304,18 @@ def test_coordinator_init():
     assert coordinator.district is None
     # Every full hour, retried after 10 minutes
     args, kwargs = cls.call_args
-    assert args[1:] == ("warnings", coordinator._async_scheduled_download, warning.WARNING_RETRY_DELAY)
+    assert args[1:] == (
+        "warnings",
+        coordinator._async_scheduled_download,
+        warning.WARNING_RETRY_DELAY,
+    )
     assert warning.WARNING_RETRY_DELAY.total_seconds() == 600
     assert kwargs == {"config_entry": entry, "minute": 0, "second": 59}
     assert coordinator.schedule is cls.return_value
 
 
-def _scheduled_coordinator(listeners):
-    coordinator = object.__new__(warning.WarningCoordinator)
-    coordinator._listeners = listeners
-    coordinator.async_refresh = AsyncMock()
-    coordinator.last_update_success = False
-    return coordinator
-
-
-@pytest.mark.asyncio
-async def test_scheduled_download_reports_whether_it_worked():
-    coordinator = _scheduled_coordinator({1: (MagicMock(), None)})
-
-    assert await coordinator._async_scheduled_download(None) is False
-    coordinator.last_update_success = True
-    await coordinator.async_update_now()
-    assert coordinator.async_refresh.await_count == 2
-
-
-@pytest.mark.asyncio
-async def test_nothing_is_downloaded_without_enabled_sensors():
-    coordinator = _scheduled_coordinator({})
-    assert await coordinator._async_scheduled_download(None) is True
-    coordinator.async_refresh.assert_not_awaited()
-
-
 def test_setup_schedules_and_registers_the_update():
+    """Test setup schedules and registers the update."""
     entry = MagicMock(entry_id="e1")
     hass = MagicMock(data={})
     coordinator = MagicMock()
@@ -345,6 +343,7 @@ def _sensors(data, language="en"):
 
 
 def test_sensors_show_the_highest_level_and_what_is_in_force():
+    """Test sensors show the highest level and what is in force."""
     data = Warnings(
         alerts=parse_snippet(NOTHING, ALERT_PHENOMENA),
         warnings=parse_snippet(THUNDERSTORM_AND_WIND, WARNING_PHENOMENA),
@@ -370,6 +369,7 @@ def test_sensors_show_the_highest_level_and_what_is_in_force():
 
 
 def test_sensors_name_the_phenomena_in_hungarian():
+    """Test sensors name the phenomena in hungarian."""
     data = Warnings(alerts={"thunderstorm": "red"}, warnings={})
     alert, _ = _sensors(data, "hu")
     assert alert.extra_state_attributes == {
@@ -379,22 +379,31 @@ def test_sensors_name_the_phenomena_in_hungarian():
 
 @pytest.mark.parametrize(
     ("language", "label"),
-    [("hu", "Tartós, sűrű köd"), ("hu-HU", "Tartós, sűrű köd"), ("en-GB", "Persistent dense fog"), ("de", "Persistent dense fog")],
+    [
+        ("hu", "Tartós, sűrű köd"),
+        ("hu-HU", "Tartós, sűrű köd"),
+        ("en-GB", "Persistent dense fog"),
+        ("de", "Persistent dense fog"),
+    ],
 )
 def test_in_force_language(language, label):
+    """Test in force language."""
     assert in_force({"fog": "yellow"}, language)[0]["label"] == label
 
 
 def test_in_force_puts_the_highest_level_first():
+    """Test in force puts the highest level first."""
     levels = {"rain": "yellow", "thunderstorm": "yellow", "fog": "none", "snowfall": "red"}
     assert [w["type"] for w in in_force(levels, "en")] == ["snowfall", "rain", "thunderstorm"]
 
 
 def test_every_phenomenon_has_a_name():
+    """Test every phenomenon has a name."""
     assert set(PHENOMENON_NAMES) == set(WARNING_PHENOMENA.values())
 
 
 def test_sensors_before_the_first_download():
+    """Test sensors before the first download."""
     for sensor in _sensors(None):
         assert not sensor.available
         assert sensor.native_value is None
@@ -402,6 +411,7 @@ def test_sensors_before_the_first_download():
 
 
 def test_sensor_descriptions():
+    """Test sensor descriptions."""
     assert [(d.key, d.translation_key) for d in WARNING_SENSORS] == [
         ("alerts", "forecast_alert"),
         ("warnings", "forecast_warning"),

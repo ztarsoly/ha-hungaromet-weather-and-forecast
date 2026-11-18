@@ -6,7 +6,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import custom_components.hungaromet_weather_and_forecast as integration
-from custom_components.hungaromet_weather_and_forecast.scope import EntryScope, device_info, scoped_id
+from custom_components.hungaromet_weather_and_forecast.scope import (
+    EntryScope,
+    device_info,
+    scoped_id,
+)
 from custom_components.hungaromet_weather_and_forecast.station_sensor import (
     FEEDS,
     Measurement,
@@ -24,6 +28,7 @@ def _sensor(feed, name, key, unit):
 
 
 def test_scope_from_entry_and_ids():
+    """Test scope from entry and ids."""
     entry = SimpleNamespace(entry_id="e1", title="HungaroMet Pécs")
     assert EntryScope.from_entry(entry) == SCOPE
     assert scoped_id(SCOPE, "hungaromet_weather") == "e1_hungaromet_weather"
@@ -31,6 +36,7 @@ def test_scope_from_entry_and_ids():
 
 
 def test_device_info_with_and_without_scope():
+    """Test device info with and without scope."""
     scoped = device_info(SCOPE, "hungaromet_weather", "daily", "Daily weather")
     assert scoped["identifiers"] == {("hungaromet_weather_and_forecast", "e1_hungaromet_weather")}
     assert scoped["translation_placeholders"] == {"name": "HungaroMet Pécs"}
@@ -66,6 +72,7 @@ def test_device_info_with_and_without_scope():
     ],
 )
 def test_sensors_are_scoped_to_their_entry(entity, unique_id, device_id):
+    """Test sensors are scoped to their entry."""
     assert entity.unique_id == unique_id
     assert entity.device_info["identifiers"] == {("hungaromet_weather_and_forecast", device_id)}
     assert entity.device_info["translation_placeholders"] == {"name": "HungaroMet Pécs"}
@@ -87,7 +94,9 @@ def registries():
     devices = {
         "d1": _device("d1", {("hungaromet_weather_and_forecast", "hungaromet_weather")}),
         "radar": _device("radar", {("hungaromet_weather_and_forecast", "hungaromet_radar_gif")}),
-        "shared": _device("shared", {("hungaromet_weather_and_forecast", "hungaromet_weather_hourly")}),
+        "shared": _device(
+            "shared", {("hungaromet_weather_and_forecast", "hungaromet_weather_hourly")}
+        ),
         "done": _device("done", {("hungaromet_weather_and_forecast", "e1_hungaromet_forecast")}),
     }
     owners = {
@@ -115,8 +124,8 @@ def registries():
         yield migrate, dev_reg
 
 
-@pytest.mark.asyncio
 async def test_migration_scopes_version_1_entities_and_devices(registries):
+    """Test migration scopes version 1 entities and devices."""
     migrate, dev_reg = registries
     hass = MagicMock()
     entry = SimpleNamespace(entry_id="e1", version=1)
@@ -137,8 +146,8 @@ async def test_migration_scopes_version_1_entities_and_devices(registries):
     )
 
 
-@pytest.mark.asyncio
 async def test_migration_of_current_and_future_versions(registries):
+    """Test migration of current and future versions."""
     migrate, _ = registries
     hass = MagicMock()
 
@@ -146,4 +155,3 @@ async def test_migration_of_current_and_future_versions(registries):
     assert await integration.async_migrate_entry(hass, SimpleNamespace(version=3)) is False
     migrate.assert_not_awaited()
     hass.config_entries.async_update_entry.assert_not_called()
-
