@@ -112,8 +112,8 @@ def test_wind_bearing_turns_the_short_way_round():
     ],
 )
 def test_bearing_to_direction_uses_16_points(bearing, direction):
-    # Like Home Assistant's weather cards: 12° is NNE (met.hu says "északi")
     """Test bearing to direction uses 16 points."""
+    # Like Home Assistant's weather cards: 12° is NNE (met.hu says "északi")
     assert bearing_to_direction(bearing) == direction
 
 

@@ -608,7 +608,11 @@ def _values(rows: list[ForecastPeriod], name: str) -> list[float]:
 
 
 def _day_summary(rows: list[ForecastPeriod]) -> ForecastValues:
-    """Summarise one day's rows; the middle row stands for its weather condition."""
+    """Summarise one day's rows; the middle row stands for its weather condition.
+
+    A day is never clear-night: met.hu's middle row has a night symbol when its
+    six hours run past sunset.
+    """
     temperatures = _values(rows, "temperature")
     # met.hu's own minimum and maximum win over the 6-hour temperatures
     lows = _values(rows, "temperature_min") or temperatures
@@ -617,15 +621,16 @@ def _day_summary(rows: list[ForecastPeriod]) -> ForecastValues:
     pressures = _values(rows, "pressure")
     clouds = _values(rows, "cloud_cover")
     speeds = _values(rows, "wind_speed")
-    middle = rows[len(rows) // 2]
+    middle = rows[len(rows) // 2].weather_condition
     return ForecastValues(
-        forecast_time=rows[0].forecast_time.replace(hour=12, minute=0),
+        # The start of the day, in Hungarian time
+        forecast_time=rows[0].forecast_time.replace(hour=0, minute=0, second=0, microsecond=0),
         temperature=(
             round(sum(temperatures) / len(temperatures), 2) if temperatures else None
         ),
         temperature_min=min(lows, default=None),
         temperature_max=max(highs, default=None),
-        weather_condition=middle.weather_condition,
+        weather_condition="sunny" if middle == "clear-night" else middle,
         precipitation=round(sum(precipitation), 2) if precipitation else None,
         cloud_cover=round(sum(clouds) / len(clouds), 2) if clouds else None,
         wind_speed=round(sum(speeds) / len(speeds), 2) if speeds else None,

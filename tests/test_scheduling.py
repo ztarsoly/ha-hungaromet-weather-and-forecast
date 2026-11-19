@@ -214,7 +214,7 @@ async def test_radar_failed_rebuild_keeps_previous_state():
 
     assert await image.async_update_data() is None
 
-    assert image._update_counter == 0
+    assert image.image_last_updated is None
     image.async_write_ha_state.assert_not_called()
 
 

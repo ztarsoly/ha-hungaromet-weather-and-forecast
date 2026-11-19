@@ -71,9 +71,5 @@ class HungarometRegionalRadarImage(RadarImage):
             "configuration_url": RADAR_WEB_PAGE,
         }
 
-    @property
-    def extra_state_attributes(self):
-        return {**super().extra_state_attributes, "quadrant": self._quadrant}
-
     def _list_frames(self):
         return latest_frame_urls(self._quadrant)

@@ -186,8 +186,8 @@ def test_condition_for(description, night, condition):
 
 
 def test_current_period_is_the_current_hour(data):
-    # 10:30 falls in the 10:00 hour, interpolated between 07:00 and 13:00
     """Test current period is the current hour."""
+    # 10:30 falls in the 10:00 hour, interpolated between 07:00 and 13:00
     assert data.current.forecast_time.hour == 10
     assert data.current.temperature == 10.0
     late = NOW + timedelta(days=5)
@@ -197,7 +197,7 @@ def test_current_period_is_the_current_hour(data):
 def test_daily_summary(data):
     """Test daily summary."""
     today, tomorrow = data.daily
-    assert today.forecast_time.hour == 12
+    assert today.forecast_time == datetime(2026, 10, 28, tzinfo=HUNGARY_TZ)
     assert (today.temperature_min, today.temperature_max) == (-1, 21)
     assert today.temperature == round((4 + 16 + 0) / 3, 2)
     assert today.precipitation == 4.5
@@ -215,6 +215,25 @@ def _day_rows(*rows):
         ForecastPeriod(forecast_time=NOW.replace(hour=hour), **values)
         for hour, values in zip((1, 7, 13, 19), rows)
     ]
+
+
+def test_a_day_is_never_clear_night():
+    """met.hu's 13:00 row has a night symbol when it runs past sunset."""
+    conditions = ("partlycloudy", "sunny", "clear-night", "partlycloudy")
+    rows = _day_rows(*({"weather_condition": c} for c in conditions))
+    assert aggregate_daily(rows)[0].weather_condition == "sunny"
+
+
+def test_a_day_starts_at_local_midnight_across_the_clock_change():
+    """Summer time ends at 03:00 on 25 October 2026: midnight is still +02:00."""
+    rows = [
+        ForecastPeriod(forecast_time=datetime(2026, 10, 25, hour, tzinfo=HUNGARY_TZ))
+        for hour in (1, 7, 13, 19)
+    ]
+    (day,) = aggregate_daily(rows)
+    assert day.forecast_time.isoformat() == "2026-10-25T00:00:00+02:00"
+    rows = [ForecastPeriod(forecast_time=datetime(2026, 10, 26, 7, tzinfo=HUNGARY_TZ))]
+    assert aggregate_daily(rows)[0].forecast_time.isoformat() == "2026-10-26T00:00:00+01:00"
 
 
 def test_daily_cloud_cover_is_the_average():
@@ -249,8 +268,8 @@ def test_daily_wind_bearing_is_the_compass_average():
 
 
 def test_daily_wind_bearing_without_a_direction():
-    # The bearings cancel out, or no row has one
     """Test daily wind bearing without a direction."""
+    # The bearings cancel out, or no row has one
     rows = _day_rows({"wind_bearing": 90}, {"wind_bearing": 270})
     assert aggregate_daily(rows)[0].wind_bearing is None
     assert aggregate_daily(_day_rows({}, {}))[0].wind_bearing is None
@@ -801,7 +820,7 @@ def test_weather_forecasts(data):
     hourly = entity._async_forecast_hourly()
     assert daily[0]["native_temperature"] == 21
     assert daily[0]["native_templow"] == -1
-    assert daily[0]["datetime"] == "2026-10-28T12:00:00+01:00"
+    assert daily[0]["datetime"] == "2026-10-28T00:00:00+01:00"
     # One entry per hour from the current hour (10:00) to the last row at 01:00
     assert len(hourly) == 16
     assert hourly[0]["datetime"] == "2026-10-28T10:00:00+01:00"

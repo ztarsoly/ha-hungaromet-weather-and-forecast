@@ -275,9 +275,7 @@ async def test_radar_image_updates_only_when_added():
     assert await image.async_update_data() == "x.png"
 
     hass.async_add_executor_job.assert_awaited_once()
-    assert image._update_counter == 1
     assert image.image_last_updated is not None
-    assert image.extra_state_attributes["last_updated"] == image.image_last_updated.isoformat()
     assert image.state == image.image_last_updated.isoformat()
     image.async_write_ha_state.assert_called_once()
 
@@ -360,7 +358,7 @@ def test_radar_image_names_and_ids():
     )
     assert image.device_info["translation_key"] == "radar"
     assert image.state is None
-    assert image.extra_state_attributes == {"last_updated": None, "update_counter": 0}
+    assert image.extra_state_attributes is None
 
 
 async def test_radar_update_entity_rebuilds_the_animation():

@@ -137,8 +137,7 @@ def test_regional_radar_entity():
     assert entity.device_info["configuration_url"] == (
         "https://www.met.hu/idojaras/aktualis_idojaras/radar/"
     )
-    assert entity.extra_state_attributes["quadrant"] == "ne"
-    assert entity.extra_state_attributes["update_counter"] == 0
+    assert entity.extra_state_attributes is None
 
 
 def test_regional_radar_lists_its_own_quadrant():
@@ -176,7 +175,7 @@ async def test_incomplete_animation_is_shown_but_retried():
     assert await entity.async_update_data() is None
 
     assert entity.image() == b"partial"
-    assert entity._update_counter == 0
+    assert entity.image_last_updated is None
     entity.async_write_ha_state.assert_called_once()
 
 

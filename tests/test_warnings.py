@@ -75,14 +75,14 @@ def test_find_district(lat, lon, district):
 
 
 def test_a_place_outside_the_drawn_map_gets_the_nearest_district():
-    # Szob lies on the Danube, just outside the coarsely drawn polygons
     """Test a place outside the drawn map gets the nearest district."""
+    # Szob lies on the Danube, just outside the coarsely drawn polygons
     assert find_district(47.82, 18.87) == "1316"
 
 
 def test_distance_from_a_border_with_a_repeated_point():
-    # The map's polygons end with their first point twice
     """Test distance from a border with a repeated point."""
+    # The map's polygons end with their first point twice
     assert _distance(3, 4, [0, 0, 0, 0]) == 5
 
 

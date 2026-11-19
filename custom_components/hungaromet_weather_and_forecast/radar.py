@@ -192,7 +192,6 @@ class RadarImage(ImageEntity):
         # The animation is kept in memory only; it is built when the entity is
         # added, and the entity is unavailable until then
         self._frames = RadarFrames()
-        self._update_counter = 0
         # What stops the schedule and the update service's rebuilds
         self._unsubscribe: list = []
 
@@ -265,7 +264,6 @@ class RadarImage(ImageEntity):
             # newest frame is in, which also tells the frontend to reload it
             if frame_url is not None:
                 self._attr_image_last_updated = dt_util.utcnow()
-                self._update_counter += 1
             self.async_write_ha_state()
         return frame_url
 
@@ -279,11 +277,3 @@ class RadarImage(ImageEntity):
     def image(self):
         """Return the most recent radar image bytes."""
         return self._frames.gif
-
-    @property
-    def extra_state_attributes(self):
-        updated = self.image_last_updated
-        return {
-            "last_updated": updated.isoformat() if updated else None,
-            "update_counter": self._update_counter,
-        }
