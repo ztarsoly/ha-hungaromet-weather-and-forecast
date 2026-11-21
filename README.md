@@ -35,8 +35,11 @@ A szükséges Python-csomagokat (pandas, beautifulsoup4) a Home Assistant telep�
 
 ### Kézi telepítés
 
-1. Másolja a `custom_components/hungaromet_weather_and_forecast` mappát a Home Assistant `custom_components` könyvtárába
-2. Indítsa újra a Home Assistantet
+1. Töltse le a `hungaromet_weather_and_forecast-<verzió>.zip` fájlt a [legutóbbi kiadásból](https://github.com/ztarsoly/ha-hungaromet-weather-and-forecast/releases/latest)
+2. Csomagolja ki a Home Assistant konfigurációs könyvtárában (ahol a `configuration.yaml` van) lévő `custom_components` könyvtárba; ha nincs ilyen könyvtár, hozza létre. A végén a `custom_components/hungaromet_weather_and_forecast/manifest.json` fájlnak kell meglennie
+3. Indítsa újra a Home Assistantet
+
+Frissítéshez törölje a `custom_components/hungaromet_weather_and_forecast` könyvtárat, csomagolja ki ugyanígy az új kiadás zip-fájlját, és indítsa újra a Home Assistantet.
 
 ## Beállítás
 

@@ -20,6 +20,7 @@ from custom_components.hungaromet_weather_and_forecast.const import (
     LOCATION_HOME,
     LOCATION_SETTLEMENT,
 )
+from custom_components.hungaromet_weather_and_forecast.device_classes import WIND_DIRECTION
 from custom_components.hungaromet_weather_and_forecast.scope import EntryScope
 from custom_components.hungaromet_weather_and_forecast.weather_data import _get_reference_coords
 from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
@@ -733,7 +734,8 @@ def test_enum_sensors_list_their_states():
     assert by_key["weather_condition"].device_class == SensorDeviceClass.ENUM
     assert by_key["weather_condition"].options == CONDITION_STATES
     assert by_key["wind_direction"].options == WIND_DIRECTION_STATES
-    assert by_key["wind_bearing"].device_class == SensorDeviceClass.WIND_DIRECTION
+    # None on Home Assistant versions without the wind direction device class
+    assert by_key["wind_bearing"].device_class == WIND_DIRECTION
     assert "exceptional" in CONDITION_STATES
     assert len(WIND_DIRECTION_STATES) == 16
     assert not {"calm", "variable"} & set(WIND_DIRECTION_STATES)

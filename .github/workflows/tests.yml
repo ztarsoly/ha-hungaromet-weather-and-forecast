@@ -8,7 +8,7 @@ on:
     branches:
       - main
   workflow_dispatch:
-  # Can be run by other workflows, e.g. before a release
+  # Run by the Release workflow before publishing
   workflow_call:
 
 permissions:

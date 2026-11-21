@@ -5,7 +5,7 @@ testpaths = ["tests"]
 pythonpath = ["."]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-addopts = "--cov --cov-report=term-missing"
+addopts = "--strict-markers --cov --cov-report=term-missing"
 filterwarnings = [
     "ignore:Inheritance class HomeAssistantApplication from web.Application is discouraged:DeprecationWarning",
 ]
@@ -16,6 +16,9 @@ source = ["custom_components"]
 [tool.coverage.report]
 # Fail the test run if new code isn't covered by tests.
 fail_under = 99
+
+[tool.pylint.format]
+max-line-length = 100
 
 [tool.pylint."messages control"]
 disable = [
@@ -34,4 +37,7 @@ disable = [
   "redefined-outer-name",
   "too-many-arguments",
   "too-many-positional-arguments",
+  # Parsers and their tests are long by nature.
+  "too-many-lines",
+  "too-many-locals",
 ]

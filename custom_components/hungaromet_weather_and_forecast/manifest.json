@@ -1,13 +1,17 @@
 {
   "domain": "hungaromet_weather_and_forecast",
   "name": "HungaroMet Weather & Forecast",
-  "codeowners": ["@ztarsoly"],
+  "codeowners": [
+    "@ztarsoly"
+  ],
   "config_flow": true,
-  "dependencies": [],
   "documentation": "https://github.com/ztarsoly/ha-hungaromet-weather-and-forecast",
   "integration_type": "service",
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/ztarsoly/ha-hungaromet-weather-and-forecast/issues",
-  "requirements": ["pandas", "beautifulsoup4"],
+  "requirements": [
+    "pandas",
+    "beautifulsoup4"
+  ],
   "version": "1.3.2"
 }
