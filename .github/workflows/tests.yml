@@ -20,12 +20,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout the repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        uses: actions/checkout@v7
+
+      # The Python version the latest Home Assistant requires, e.g. 3.14 from
+      # ">=3.14.2"
+      - name: Find Home Assistant's Python version
+        id: ha-python
+        run: |
+          REQUIRES=$(curl -fsSL https://pypi.org/pypi/homeassistant/json | jq -r '.info.requires_python')
+          VERSION=$(echo "$REQUIRES" | grep -oE '[0-9]+\.[0-9]+' | head -n 1)
+          echo "Home Assistant requires Python $REQUIRES: using $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set up Python
-        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        uses: actions/setup-python@v7
         with:
-          python-version: "3.14"
+          python-version: ${{ steps.ha-python.outputs.version }}
           cache: "pip"
           cache-dependency-path: requirements_test.txt
 

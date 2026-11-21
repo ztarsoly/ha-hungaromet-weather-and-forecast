@@ -22,7 +22,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Update manifest version
         run: |
@@ -36,8 +36,7 @@ jobs:
           zip -r ../hungaromet_weather_and_forecast.zip hungaromet_weather_and_forecast -x "*/__pycache__/*"
 
       - name: Upload release asset
-        uses: softprops/action-gh-release@v2
-        with:
-          files: hungaromet_weather_and_forecast.zip
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" hungaromet_weather_and_forecast.zip --clobber

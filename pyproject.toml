@@ -17,9 +17,6 @@ source = ["custom_components"]
 # Fail the test run if new code isn't covered by tests.
 fail_under = 99
 
-[tool.pylint.main]
-py-version = "3.14"
-
 [tool.pylint."messages control"]
 disable = [
   # Home Assistant entities combine several base classes and have few
