@@ -1,10 +1,10 @@
 # The integration's own packages, as in manifest.json
-pandas==3.1.0
-beautifulsoup4==4.15.0
+pandas
+beautifulsoup4
 
 # Home Assistant and the test and check tools
-homeassistant==2026.10.4
-pylint==4.1.3
-pytest==9.2.0
-pytest-asyncio==1.4.1.post1
-pytest-cov==7.1.0
+homeassistant
+pylint
+pytest
+pytest-asyncio
+pytest-cov
