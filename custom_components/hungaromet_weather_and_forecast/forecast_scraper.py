@@ -6,8 +6,8 @@ JSON suggestions holding each settlement's name ("value"), code ("kod") and
 coordinates ("lat", "lon"). Posting a settlement to the forecast page with
 c=tablazat returns its forecast table. The table's <tbody> has one <tr> for
 each 6-hour period, in Hungarian local time. A <th class="naptar"> starts each
-day, with the month, the day and the weekday in <div>s. The <td>s are told
-apart by their first class:
+day, with the month, the day and the weekday in <div>s; only the first one is
+read, see _read_rows. The <td>s are told apart by their first class:
 
 ora       time, "HH:MM"
 T         temperature [°C]; with a second class X or N, the day's maximum or
@@ -31,7 +31,7 @@ import math
 import re
 from bisect import bisect_right
 from collections import defaultdict
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 
 import aiohttp
@@ -245,15 +245,30 @@ def parse_page(
 
 
 def _read_rows(tbody: Tag, now: datetime) -> list[ForecastPeriod]:
-    """Read the table's rows, each on the day of the last day cell above it."""
+    """Read the table's rows; the first day cell dates the first row.
+
+    A row is on the same day as the one before it while the hours rise, and on
+    the next day when they do not (19:00, then 01:00). The later day cells are
+    not used: from 00:00 UTC for about 25 minutes met.hu groups the rows by UTC
+    days, so a day cell then sits above the wrong rows.
+    """
     rows = []
     day = None
+    last_clock = None
     for tr in tbody.find_all("tr", recursive=False):
-        if (day_cell := tr.find("th", class_="naptar")) is not None:
+        if day is None and (day_cell := tr.find("th", class_="naptar")) is not None:
             day = _calendar_day(day_cell, now)
         cells = _cells_by_class(tr)
-        if "ora" in cells:
-            rows.append(_row(cells, day or now.astimezone(HUNGARY_TZ).date()))
+        if "ora" not in cells:
+            continue
+        text = _text(cells["ora"][0])
+        clock = _clock(text)
+        day = day or now.astimezone(HUNGARY_TZ).date()
+        if clock is not None:
+            if last_clock is not None and clock <= last_clock:
+                day += timedelta(days=1)
+            last_clock = clock
+        rows.append(_row(cells, day))
     return rows
 
 
@@ -315,13 +330,17 @@ def _first_number(cells: dict[str, list[Tag]], name: str) -> float | None:
     return _number(_text(cells[name][0])) if cells.get(name) else None
 
 
+def _clock(text: str) -> tuple[int, int] | None:
+    """Read a row's "HH:MM" as (hour, minute)."""
+    match = re.match(r"(\d{1,2}):(\d{2})", text)
+    return (int(match[1]), int(match[2])) if match else None
+
+
 def _row_time(text: str, day: date) -> datetime | None:
     """Put a row's "HH:MM" on its day, in Hungarian local time."""
-    match = re.match(r"(\d{1,2}):(\d{2})", text)
-    if match is None:
+    if (clock := _clock(text)) is None:
         return None
-    hour, minute = int(match[1]), int(match[2])
-    return datetime(day.year, day.month, day.day, hour, minute, tzinfo=HUNGARY_TZ)
+    return datetime(day.year, day.month, day.day, *clock, tzinfo=HUNGARY_TZ)
 
 
 def _wind(cells: dict[str, list[Tag]]) -> tuple[float | None, str | None]:
@@ -420,13 +439,18 @@ def forecast_to_dict(data: ForecastData) -> dict:
         "settlement": data.settlement,
         "issued": data.issued.isoformat() if data.issued else None,
         "periods": [period(p) for p in data.periods],
+        "hourly": [period(p) for p in data.hourly],
     }
 
 
 def forecast_from_dict(
     stored: dict, now: datetime, location: tuple[float, float] | None = None
 ) -> ForecastData:
-    """Rebuild a stored forecast, working out its hours for `now` again."""
+    """Rebuild a stored forecast.
+
+    The hours are the ones saved, as they were published and planned; a forecast
+    saved without hours has them worked out from its rows.
+    """
 
     def period(values: dict) -> ForecastPeriod:
         time = values.get("forecast_time")
@@ -442,6 +466,11 @@ def forecast_from_dict(
         periods=[period(p) for p in stored["periods"]],
     )
     _derive(data, now)
+    if hourly := stored.get("hourly"):
+        data.hourly = [period(p) for p in hourly]
+        if location:
+            _follow_the_sun(data.hourly, location)
+        data.current = current_period(data.hourly, data.periods, now)
     return data
 
 
@@ -477,6 +506,76 @@ def keep_dropped_row(
     data.periods = [*kept, *data.periods]
     _derive(data, now)
     return data
+
+
+# What changes smoothly from hour to hour; the condition and precipitation belong
+# to the row that starts their period
+CONTINUOUS = ("temperature", "cloud_cover", "wind_speed", "wind_gust", "pressure")
+
+
+def continue_from_recorded(
+    data: ForecastData, previous: ForecastData | None, now: datetime
+) -> ForecastData:
+    """Start the hours from the values already published, not from the new rows.
+
+    A new met.hu forecast has other values for the hour that has just passed, and
+    working this hour out from its rows would make the values jump. Instead the
+    hours up to the last one before `now` stay as they were recorded in the
+    previous download, and the hours from there to the next met.hu row change
+    in a straight line from the recorded value to the row's. From that row on
+    the hours follow the new rows as before.
+    """
+    if previous is None or not data.hourly:
+        return data
+    now_hour = now.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+    last_hour = now_hour - timedelta(hours=1)
+    recorded = {p.forecast_time.astimezone(UTC): p for p in previous.hourly}
+    anchor = recorded.get(last_hour)
+    target = next(
+        (
+            p
+            for p in data.periods
+            if p.forecast_time and p.forecast_time.astimezone(UTC) >= now_hour
+        ),
+        None,
+    )
+    target_time = target.forecast_time.astimezone(UTC) if target else None
+    steps = round((target_time - last_hour).total_seconds() / 3600) if target else 0
+    hourly = []
+    for hour in data.hourly:
+        time = hour.forecast_time.astimezone(UTC)
+        if time <= last_hour and time in recorded:
+            hour = recorded[time]
+        elif anchor and target and last_hour < time < target_time:
+            step = round((time - last_hour).total_seconds() / 3600)
+            hour = _towards(hour, anchor, target, step, steps)
+        hourly.append(hour)
+    data.hourly = hourly
+    data.current = current_period(hourly, data.periods, now)
+    return data
+
+
+def _towards(
+    hour: ForecastPeriod,
+    anchor: ForecastPeriod,
+    target: ForecastPeriod,
+    step: int,
+    steps: int,
+) -> ForecastPeriod:
+    """Return `hour` with its changing values `step` of `steps` hours on the way
+    from `anchor`'s values to `target`'s."""
+    fraction = step / steps
+    values = {
+        name: _lerp(getattr(anchor, name), getattr(target, name), fraction)
+        for name in CONTINUOUS
+        if getattr(anchor, name) is not None and getattr(target, name) is not None
+    }
+    if anchor.wind_bearing is not None and target.wind_bearing is not None:
+        values["wind_bearing"] = _lerp_bearing(
+            anchor.wind_bearing, target.wind_bearing, fraction
+        )
+        values["wind_direction"] = bearing_to_direction(values["wind_bearing"])
+    return replace(hour, **values)
 
 
 def current_period(hourly, periods, now: datetime) -> ForecastPeriod | None:

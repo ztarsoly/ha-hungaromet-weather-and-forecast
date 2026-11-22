@@ -60,6 +60,28 @@ def test_forecast_round_trip():
     assert (data.current.forecast_time.hour, data.current.temperature) == (17, 12.0)
 
 
+def test_saved_hours_come_back_as_they_were_saved():
+    """Test saved hours come back as they were saved."""
+    stored = forecast_to_dict(_forecast())
+    assert len(stored["hourly"]) == 7
+    stored["hourly"][0]["temperature"] = 99.0
+
+    data = forecast_from_dict(stored, NOW)
+
+    assert data.hourly[0].temperature == 99.0
+    assert data.hourly[1:] == _forecast().hourly[1:]
+
+
+def test_forecast_saved_without_hours_gets_them_from_its_rows():
+    """Test forecast saved without hours gets them from its rows."""
+    stored = forecast_to_dict(_forecast())
+    del stored["hourly"]
+
+    data = forecast_from_dict(stored, NOW)
+
+    assert data.hourly == _forecast().hourly
+
+
 def test_forecast_round_trip_without_times():
     """Test forecast round trip without times."""
     data = ForecastData(settlement="X", periods=[ForecastPeriod(temperature=1)])

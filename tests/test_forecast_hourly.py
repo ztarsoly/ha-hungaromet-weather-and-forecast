@@ -16,6 +16,7 @@ from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     ForecastPeriod,
     _derive,
     bearing_to_direction,
+    continue_from_recorded,
     current_period,
     find_current_hour,
     interpolate_hourly,
@@ -339,6 +340,144 @@ async def test_coordinator_keeps_the_dropped_row():
         data = await coordinator._async_update_data()
 
     assert data.current.forecast_time.hour == 17
+
+
+BEFORE = datetime(2026, 10, 28, 1, 1, tzinfo=HUNGARY_TZ)
+AFTER = datetime(2026, 10, 28, 2, 1, tzinfo=HUNGARY_TZ)
+
+
+def _night_before(**first):
+    """A download at 01:01 with the 01:00 and 07:00 rows."""
+    return _download(
+        _at(28, 1, temperature=1.0, pressure=1018.0, **first),
+        _at(28, 7, temperature=0.0, pressure=1017.0),
+        now=BEFORE,
+    )
+
+
+def test_hours_continue_from_the_recorded_values():
+    """Test hours continue from the recorded values.
+
+    The new forecast has 6 degrees for 01:00, where 1 was published; the hours
+    do not jump to the new rows but run from the recorded value to the 07:00 row.
+    """
+    new = _download(
+        _at(28, 1, temperature=6.0, pressure=1009.0),
+        _at(28, 7, temperature=0.0, pressure=1017.0),
+        now=AFTER,
+    )
+    assert new.current.temperature == 5.0
+
+    data = continue_from_recorded(new, _night_before(), AFTER)
+
+    assert data.current.forecast_time.hour == 2
+    assert (data.current.temperature, data.current.pressure) == (0.83, 1017.83)
+    temperatures = {p.forecast_time.hour: p.temperature for p in data.hourly}
+    assert temperatures[1] == 1.0  # recorded
+    assert temperatures[4] == 0.5
+    assert temperatures[7] == 0.0  # the row itself
+
+
+def test_hours_after_the_next_row_follow_the_new_rows():
+    """Test hours after the next row follow the new rows."""
+    new = _download(
+        _at(28, 1, temperature=6.0),
+        _at(28, 7, temperature=0.0),
+        _at(28, 13, temperature=12.0),
+        now=AFTER,
+    )
+
+    data = continue_from_recorded(new, _night_before(), AFTER)
+
+    assert {p.forecast_time.hour: p.temperature for p in data.hourly}[10] == 6.0
+
+
+def test_condition_and_precipitation_stay_with_the_new_rows():
+    """Test condition and precipitation stay with the new rows."""
+    new = _download(
+        _at(28, 1, temperature=6.0, weather_condition="rainy", precipitation=6.0),
+        _at(28, 7, temperature=0.0),
+        now=AFTER,
+    )
+
+    data = continue_from_recorded(new, _night_before(weather_condition="sunny"), AFTER)
+
+    assert (data.current.weather_condition, data.current.precipitation) == ("rainy", 1.0)
+
+
+def test_the_wind_bearing_turns_from_the_recorded_bearing():
+    """Test the wind bearing turns from the recorded bearing."""
+    previous = _download(
+        _at(28, 1, wind_bearing=350.0), _at(28, 7, wind_bearing=10.0), now=BEFORE
+    )
+    new = _download(
+        _at(28, 1, wind_bearing=90.0), _at(28, 7, wind_bearing=10.0), now=AFTER
+    )
+
+    data = continue_from_recorded(new, previous, AFTER)
+
+    assert (data.current.wind_bearing, data.current.wind_direction) == (353.33, "n")
+
+
+def test_values_missing_from_a_row_are_left_as_they_are():
+    """Test values missing from a row are left as they are."""
+    new = _download(
+        _at(28, 1, temperature=6.0), _at(28, 7, cloud_cover=50.0), now=AFTER
+    )
+
+    data = continue_from_recorded(new, _night_before(), AFTER)
+
+    assert data.current.cloud_cover is None
+    assert data.current.temperature == 6.0  # the new rows' own
+
+
+def test_no_previous_download_keeps_the_hours_from_the_rows():
+    """Test no previous download keeps the hours from the rows."""
+    new = _download(_at(28, 1, temperature=6.0), _at(28, 7, temperature=0.0), now=AFTER)
+    hourly = list(new.hourly)
+
+    assert continue_from_recorded(new, None, AFTER).hourly == hourly
+    assert continue_from_recorded(new, _download(now=AFTER), AFTER).hourly == hourly
+
+
+def test_hours_before_the_last_recorded_one_are_still_recorded_without_a_next_row():
+    """Test hours up to the last recorded one stay recorded when no row follows."""
+    new = _download(_at(28, 1, temperature=6.0), now=AFTER)
+
+    data = continue_from_recorded(new, _night_before(), AFTER)
+
+    assert [p.temperature for p in data.hourly] == [1.0]
+
+
+def test_without_a_recorded_hour_before_now_only_the_older_hours_are_recorded():
+    """Test without a recorded hour before now, only the older hours are recorded."""
+    now = datetime(2026, 10, 28, 10, 30, tzinfo=HUNGARY_TZ)
+    new = _download(_at(28, 7, temperature=-1.0), _at(28, 13, temperature=7.0), now=now)
+
+    data = continue_from_recorded(new, _night_before(), now)
+
+    assert {p.forecast_time.hour: p.temperature for p in data.hourly}[7] == 0.0
+    assert data.current.temperature == 3.0  # worked out from the new rows
+
+
+async def test_coordinator_continues_from_the_recorded_values():
+    """Test coordinator continues from the recorded values."""
+    coordinator = object.__new__(forecast.ForecastCoordinator)
+    coordinator.hass = MagicMock()
+    coordinator.settlement = MagicMock()
+    coordinator._store = MagicMock(async_save=AsyncMock())
+    coordinator.data = _night_before()
+    new = _download(
+        _at(28, 1, temperature=6.0), _at(28, 7, temperature=0.0), now=AFTER
+    )
+    with (
+        patch.object(forecast, "async_get_clientsession"),
+        patch.object(forecast, "fetch_forecast", AsyncMock(return_value=new)),
+        patch.object(forecast.dt_util, "now", return_value=AFTER),
+    ):
+        data = await coordinator._async_update_data()
+
+    assert data.current.temperature == 0.83
 
 
 DEBRECEN_LOCATION = (47.543, 21.648)

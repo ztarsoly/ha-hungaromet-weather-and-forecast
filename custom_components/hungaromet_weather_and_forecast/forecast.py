@@ -23,6 +23,7 @@ from .forecast_scraper import (
     FORECAST_PAGE_URL,
     ForecastData,
     Settlement,
+    continue_from_recorded,
     fetch_forecast,
     forecast_from_dict,
     forecast_to_dict,
@@ -160,7 +161,9 @@ class ForecastCoordinator(ScheduledCoordinator[ForecastData]):
             raise UpdateFailed(
                 f"met.hu forecast for {self.settlement.name} failed: {err}"
             ) from err
-        data = keep_dropped_row(data, self.data, dt_util.now())
+        now = dt_util.now()
+        data = keep_dropped_row(data, self.data, now)
+        data = continue_from_recorded(data, self.data, now)
         await self._store.async_save(
             {"kod": self.settlement.kod, "forecast": forecast_to_dict(data)}
         )

@@ -294,6 +294,38 @@ def test_parse_page_without_forecast_raises(html):
         parse_page(html, "Sehol", NOW)
 
 
+def test_rows_are_dated_by_their_order_not_by_the_day_cells():
+    """Test rows are dated by their order, not by the day cells.
+
+    From 00:00 UTC for about 25 minutes met.hu groups the rows by UTC days, so a
+    day cell sits above rows of the next day (captured on 22 November 2026).
+    """
+
+    def row(time, day=''):
+        return _forecast_row(time, 1, "w002", "x", "keleti", 90, (1, 2), day=day)
+
+    page = (
+        "<table><tbody>"
+        + row("01:00", _day("november", 22, 3))
+        + row("07:00")
+        + row("13:00")
+        + row("19:00", _day("november", 22, 4))
+        + row("01:00")
+        + row("07:00")
+        + row("13:00")
+        + row("19:00", _day("november", 23, 2))
+        + row("01:00")
+        + "</tbody></table>"
+    )
+    now = datetime(2026, 11, 22, 1, 1, tzinfo=HUNGARY_TZ)
+
+    data = parse_page(page, "X", now)
+
+    assert [(p.forecast_time.day, p.forecast_time.hour) for p in data.periods] == [
+        (22, 1), (22, 7), (22, 13), (22, 19), (23, 1), (23, 7), (23, 13), (23, 19), (24, 1),
+    ]
+
+
 def test_dates_take_the_nearest_year():
     """Test dates take the nearest year."""
     page = (
