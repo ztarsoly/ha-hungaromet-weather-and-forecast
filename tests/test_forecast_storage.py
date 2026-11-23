@@ -111,9 +111,10 @@ def _coordinator(stored):
     return coordinator
 
 
-async def test_load_stored_forecast():
+@pytest.mark.parametrize("key", ["code", "kod"])  # "kod" up to 1.3.4
+async def test_load_stored_forecast(key):
     """Test load stored forecast."""
-    stored = {"kod": "725", "forecast": forecast_to_dict(_forecast())}
+    stored = {key: "725", "forecast": forecast_to_dict(_forecast())}
     coordinator = _coordinator(stored)
 
     with patch.object(forecast.dt_util, "now", return_value=NOW):
@@ -129,7 +130,7 @@ async def test_load_stored_forecast():
     "stored",
     [
         None,  # nothing saved yet
-        {"kod": "2209", "forecast": {}},  # another settlement (e.g. after Configure)
+        {"code": "2209", "forecast": {}},  # another settlement (e.g. after Configure)
     ],
 )
 async def test_load_ignores_missing_or_other_settlements(stored):
@@ -141,7 +142,7 @@ async def test_load_ignores_missing_or_other_settlements(stored):
 
 async def test_load_ignores_unreadable_forecast(caplog):
     """Test load ignores unreadable forecast."""
-    coordinator = _coordinator({"kod": "725", "forecast": {"periods": []}})
+    coordinator = _coordinator({"code": "725", "forecast": {"periods": []}})
     await coordinator.async_load_stored()
     assert coordinator.data is None
     assert "Ignoring the saved forecast" in caplog.text
@@ -159,7 +160,7 @@ async def test_each_download_is_saved():
         data = await coordinator._async_update_data()
 
     coordinator._store.async_save.assert_awaited_once_with(
-        {"kod": "725", "forecast": forecast_to_dict(data)}
+        {"code": "725", "forecast": forecast_to_dict(data)}
     )
 
 

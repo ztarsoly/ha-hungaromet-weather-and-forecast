@@ -1,10 +1,12 @@
 """Sensor platform: an entry's weather station sensors and forecast sensors."""
 
 import logging
+from collections.abc import Callable
 from datetime import date, datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.event import async_call_later
 
 from .const import CONF_DISTANCE_KM, DEFAULT_DISTANCE_KM, DOMAIN
 from .forecast import sensor_location
@@ -110,19 +112,65 @@ def _async_start_feed_schedules(hass, sensors, query: StationQuery, config_entry
     return stops
 
 
-async def _async_station_sensors(hass, query: StationQuery) -> list[FeedSensor]:
-    """Download each feed once and create its sensors with the first values."""
+async def _async_station_sensors(
+    hass, query: StationQuery
+) -> tuple[list[FeedSensor], list[str]]:
+    """Download each feed once and create its sensors with the first values.
+
+    A feed whose download fails still gets its sensors, without values. Returns
+    the sensors and the keys of the feeds that failed.
+    """
     sensors: list[FeedSensor] = []
+    failed: list[str] = []
     for feed in FEEDS.values():
-        data, stations = await hass.async_add_executor_job(
-            feed.process, hass, query.distance_km, query.location
-        )
+        try:
+            data, stations = await hass.async_add_executor_job(
+                feed.process, hass, query.distance_km, query.location
+            )
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            _LOGGER.error(
+                "Error updating %s sensors: %s; retrying in %s",
+                feed.key, err, FIRST_RETRY_DELAY,
+            )
+            failed.append(feed.key)
+            data, stations = {}, []
         sensors.extend(
             StationSensor(hass, feed, measurement, reading(data, measurement.key), query)
             for measurement in MEASUREMENTS[feed.key]
         )
         sensors.append(StationsSensor(hass, feed, stations, query))
-    return sensors
+    return sensors, failed
+
+
+# How long to wait before downloading a feed again whose first download failed
+FIRST_RETRY_DELAY = timedelta(minutes=1)
+
+
+def _async_retry_first_download(
+    hass, sensors, data_type, query: StationQuery
+) -> Callable[[], None]:
+    """Download a feed again until it works, for sensors left without values.
+
+    Its own schedule may be hours away (the daily feed's is once a day). Returns
+    a function that stops the retries.
+    """
+    unsub: Callable[[], None] | None = None
+
+    async def attempt(_now) -> None:
+        nonlocal unsub
+        unsub = None
+        if not _feed_sensors(sensors, data_type):
+            return
+        if await _async_update_feed(hass, sensors, data_type, query) is None:
+            unsub = async_call_later(hass, FIRST_RETRY_DELAY, attempt)
+
+    unsub = async_call_later(hass, FIRST_RETRY_DELAY, attempt)
+
+    def stop() -> None:
+        if unsub is not None:
+            unsub()
+
+    return stop
 
 
 async def async_setup_entry(
@@ -142,14 +190,12 @@ async def async_setup_entry(
         location=sensor_location(entry),
         scope=EntryScope.from_entry(entry),
     )
-    try:
-        sensors = await _async_station_sensors(hass, query)
-    except Exception as err:  # pragma: no cover  # pylint: disable=broad-exception-caught
-        # Without the first download there are no sensors; the entry stays set up
-        # for its forecast and radar
-        _LOGGER.error("Failed to fetch/process weather data: %s", err)
-        return
+    sensors, failed = await _async_station_sensors(hass, query)
     async_add_entities(sensors, True)
+    for data_type in failed:
+        entry.async_on_unload(
+            _async_retry_first_download(hass, sensors, data_type, query)
+        )
 
     async def update_entry():
         for data_type in FEEDS:

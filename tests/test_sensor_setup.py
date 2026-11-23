@@ -132,6 +132,84 @@ async def test_setup_starts_the_feed_schedules():
     assert unloads[1:] == [schedule.start.return_value] * 3
 
 
+async def test_a_failed_first_download_still_adds_the_sensors_and_retries(caplog):
+    """Test a failed first download still adds the sensors and retries it.
+
+    Without the retry the daily sensors would wait for the next day's run.
+    """
+    hass = _hass()
+    run = hass.async_add_executor_job.side_effect
+
+    async def offline_daily(func, *args):
+        if func is process_daily_data:
+            raise OSError("Failed to resolve 'odp.met.hu'")
+        return await run(func, *args)
+
+    hass.async_add_executor_job.side_effect = offline_daily
+    entry = _entry()
+    with patch.object(sensor, "async_call_later") as call_later:
+        ((sensors, _),) = (await _set_up(hass, entry))[0]
+
+    daily = [s for s in sensors if s.feed.key == "daily"]
+    assert len(daily) == 29
+    assert {s.native_value for s in daily} == {None, 0}  # no values, no stations
+    assert sensors[-1].native_value == 1  # the other feeds have theirs
+    assert "Error updating daily sensors" in caplog.text
+    ((hass_arg, delay, attempt),) = [c.args for c in call_later.call_args_list]
+    assert (hass_arg, delay) == (hass, sensor.FIRST_RETRY_DELAY)
+    # The retries stop when the entry unloads
+    stop = entry.async_on_unload.call_args_list[0].args[0]
+    stop()
+    call_later.return_value.assert_called_once()
+    assert attempt is not None
+
+
+def _retry(sensors):
+    """Start the retries of the daily feed with call_later patched."""
+    with patch.object(sensor, "async_call_later") as call_later:
+        stop = sensor._async_retry_first_download(
+            MagicMock(), sensors, "daily", StationQuery()
+        )
+    return stop, call_later
+
+
+async def test_first_download_is_retried_until_it_works():
+    """Test first download is retried until it works."""
+    daily = MagicMock(hass="hass", added=True, feed=SimpleNamespace(key="daily"))
+    update = AsyncMock(side_effect=[None, "2026-10-30"])
+    stop, call_later = _retry([daily])
+    attempt = call_later.call_args.args[2]
+
+    with (
+        patch.object(sensor, "async_call_later") as again,
+        patch.object(sensor, "_async_update_feed", update),
+    ):
+        await attempt(None)  # fails: tried again
+        assert again.call_count == 1
+        await attempt(None)  # works: no more tries
+        assert again.call_count == 1
+
+    assert update.await_count == 2
+    stop()  # nothing left to stop
+    call_later.return_value.assert_not_called()
+
+
+async def test_first_download_is_not_retried_without_enabled_sensors():
+    """Test first download is not retried without enabled sensors."""
+    disabled = MagicMock(hass="hass", added=False, feed=SimpleNamespace(key="daily"))
+    update = AsyncMock()
+    _, call_later = _retry([disabled])
+
+    with (
+        patch.object(sensor, "async_call_later") as again,
+        patch.object(sensor, "_async_update_feed", update),
+    ):
+        await call_later.call_args.args[2](None)
+
+    update.assert_not_awaited()
+    again.assert_not_called()
+
+
 async def test_update_service_updates_every_feed():
     """Test update service updates every feed."""
     hass = _hass()

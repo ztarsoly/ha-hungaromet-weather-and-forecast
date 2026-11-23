@@ -142,7 +142,8 @@ class ForecastCoordinator(ScheduledCoordinator[ForecastData]):
         download the row met.hu may have dropped meanwhile.
         """
         stored = await self._store.async_load()
-        if not stored or stored.get("kod") != self.settlement.kod:
+        # Saved as "kod" up to 1.3.4
+        if not stored or stored.get("code", stored.get("kod")) != self.settlement.kod:
             return
         try:
             self.data = forecast_from_dict(
@@ -165,7 +166,7 @@ class ForecastCoordinator(ScheduledCoordinator[ForecastData]):
         data = keep_dropped_row(data, self.data, now)
         data = continue_from_recorded(data, self.data, now)
         await self._store.async_save(
-            {"kod": self.settlement.kod, "forecast": forecast_to_dict(data)}
+            {"code": self.settlement.kod, "forecast": forecast_to_dict(data)}
         )
         return data
 
