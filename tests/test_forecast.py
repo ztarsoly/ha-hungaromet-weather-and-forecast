@@ -674,6 +674,7 @@ def _scheduled_coordinator(listeners):
     coordinator._listeners = listeners
     coordinator.async_refresh = AsyncMock()
     coordinator.last_update_success = False
+    coordinator.data = None
     return coordinator
 
 

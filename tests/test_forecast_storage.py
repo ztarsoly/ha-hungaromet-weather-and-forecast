@@ -164,6 +164,54 @@ async def test_each_download_is_saved():
     )
 
 
+def _failing_coordinator(data):
+    """A coordinator whose downloads fail, showing `data`."""
+    coordinator = _coordinator(None)
+    coordinator.data = data
+    coordinator._listeners = {1: (MagicMock(), None)}
+    coordinator.async_refresh = AsyncMock()
+    coordinator.last_update_success = False
+    coordinator.async_update_listeners = MagicMock()
+    return coordinator
+
+
+async def test_a_failed_download_moves_on_to_the_current_hour():
+    """Test a failed download moves on to the current hour of the saved forecast.
+
+    Without it the sensors would stay on the hour of the last download.
+    """
+    coordinator = _failing_coordinator(_forecast())
+    assert coordinator.data.current.forecast_time.hour == 17
+    later = datetime(2026, 10, 28, 18, 0, 59, tzinfo=HUNGARY_TZ)
+
+    with patch.object(forecast.dt_util, "now", return_value=later):
+        assert await coordinator._async_scheduled_download(None) is False
+
+    current = coordinator.data.current
+    assert (current.forecast_time.hour, current.temperature) == (18, 11.0)
+    coordinator.async_update_listeners.assert_called_once()
+
+
+async def test_a_working_download_does_not_move_the_hour_itself():
+    """Test a working download leaves the hour to the downloaded forecast."""
+    coordinator = _failing_coordinator(_forecast())
+    coordinator.last_update_success = True
+
+    assert await coordinator._async_scheduled_download(None) is True
+
+    coordinator.async_update_listeners.assert_not_called()
+
+
+async def test_a_failed_download_without_a_forecast_changes_nothing():
+    """Test a failed download without a forecast changes nothing."""
+    coordinator = _failing_coordinator(None)
+
+    assert await coordinator._async_scheduled_download(None) is False
+
+    assert coordinator.data is None
+    coordinator.async_update_listeners.assert_not_called()
+
+
 def test_store_is_per_entry():
     """Test store is per entry."""
     with patch.object(forecast, "Store") as store:

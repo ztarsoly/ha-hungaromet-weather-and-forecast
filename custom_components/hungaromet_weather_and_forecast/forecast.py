@@ -24,6 +24,7 @@ from .forecast_scraper import (
     ForecastData,
     Settlement,
     continue_from_recorded,
+    current_period,
     fetch_forecast,
     forecast_from_dict,
     forecast_to_dict,
@@ -153,6 +154,21 @@ class ForecastCoordinator(ScheduledCoordinator[ForecastData]):
             )
         except (KeyError, TypeError, ValueError) as err:
             _LOGGER.warning("Ignoring the saved forecast, which is unreadable: %s", err)
+
+    async def _async_scheduled_download(self, _scheduled_for=None) -> bool:
+        """Download the forecast; if that fails, move on to the current hour.
+
+        The saved forecast already holds every hour, so while met.hu cannot be
+        reached the sensors follow it hour by hour instead of staying on the
+        hour of the last download. The next download continues from the hours
+        shown (see continue_from_recorded).
+        """
+        fresh = await super()._async_scheduled_download(_scheduled_for)
+        if not fresh and self.data is not None:
+            data = self.data
+            data.current = current_period(data.hourly, data.periods, dt_util.now())
+            self.async_update_listeners()
+        return fresh
 
     async def _async_update_data(self) -> ForecastData:
         session = async_get_clientsession(self.hass)
