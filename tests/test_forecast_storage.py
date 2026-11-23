@@ -233,12 +233,20 @@ def test_coordinator_creates_its_store():
     assert coordinator._store is store.return_value
 
 
-async def test_removing_an_entry_deletes_its_saved_forecast():
-    """Test removing an entry deletes its saved forecast."""
+async def test_removing_an_entry_deletes_its_saved_forecast_and_warnings():
+    """Test removing an entry deletes its saved forecast and warnings."""
     hass = MagicMock()
     store = MagicMock(async_remove=AsyncMock())
-    with patch.object(integration, "forecast_store", return_value=store) as get_store:
+    saved_warnings = MagicMock(async_remove=AsyncMock())
+    with (
+        patch.object(integration, "forecast_store", return_value=store) as get_store,
+        patch.object(
+            integration, "warning_store", return_value=saved_warnings
+        ) as get_warnings,
+    ):
         await integration.async_remove_entry(hass, SimpleNamespace(entry_id="e1"))
 
     get_store.assert_called_once_with(hass, "e1")
     store.async_remove.assert_awaited_once()
+    get_warnings.assert_called_once_with(hass, "e1")
+    saved_warnings.async_remove.assert_awaited_once()

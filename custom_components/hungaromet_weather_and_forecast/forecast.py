@@ -207,5 +207,5 @@ async def async_setup_forecast(
             hass, f"{entry.entry_id}_forecast", coordinator.async_update_now
         )
     )
-    coordinator.warnings = async_setup_warnings(hass, entry, settlement)
+    coordinator.warnings = await async_setup_warnings(hass, entry, settlement)
     return coordinator

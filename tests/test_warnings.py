@@ -257,6 +257,7 @@ def _coordinator():
     coordinator.district = None
     coordinator.hass = MagicMock()
     coordinator.hass.async_add_executor_job = AsyncMock(return_value="903")
+    coordinator._store = MagicMock(async_save=AsyncMock())
     return coordinator
 
 
@@ -277,6 +278,74 @@ async def test_coordinator_finds_the_district_once():
     fetch.assert_awaited_with(session.return_value, "903")
 
 
+# 00:30 in Hungary is still the 22nd in UTC: the day is the Hungarian one
+TODAY = datetime(2026, 11, 23, 0, 30, tzinfo=HUNGARY_TZ)
+SAVED = {
+    "code": "725",
+    "day": "2026-11-23",
+    "alerts": {"thunderstorm": "yellow"},
+    "warnings": {"wind_gust": "orange"},
+}
+
+
+async def test_each_download_is_saved():
+    """Test each download is saved, with the settlement and the day."""
+    coordinator = _coordinator()
+    data = Warnings(alerts={"thunderstorm": "yellow"}, warnings={"wind_gust": "orange"})
+    with (
+        patch.object(warning, "async_get_clientsession"),
+        patch.object(warning, "fetch_warnings", AsyncMock(return_value=data)),
+        patch.object(warning.dt_util, "now", return_value=TODAY),
+    ):
+        await coordinator._async_update_data()
+
+    coordinator._store.async_save.assert_awaited_once_with(SAVED)
+
+
+async def _load(stored):
+    coordinator = _coordinator()
+    coordinator.data = None
+    coordinator._store.async_load = AsyncMock(return_value=stored)
+    with patch.object(warning.dt_util, "now", return_value=TODAY):
+        await coordinator.async_load_stored()
+    return coordinator.data
+
+
+async def test_load_saved_levels():
+    """Test the levels saved today for the settlement are loaded."""
+    assert await _load(SAVED) == Warnings(
+        alerts={"thunderstorm": "yellow"}, warnings={"wind_gust": "orange"}
+    )
+
+
+@pytest.mark.parametrize(
+    "stored",
+    [
+        None,  # nothing saved yet
+        {**SAVED, "code": "2209"},  # another settlement (e.g. after Configure)
+        {**SAVED, "day": "2026-11-22"},  # the warnings of another day
+    ],
+)
+async def test_load_ignores_missing_other_settlements_and_other_days(stored):
+    """Test load ignores missing levels, other settlements and other days."""
+    assert await _load(stored) is None
+
+
+async def test_load_ignores_unreadable_levels(caplog):
+    """Test load ignores unreadable levels."""
+    assert await _load({**SAVED, "alerts": None}) is None
+    assert "Ignoring the saved warnings" in caplog.text
+
+
+def test_store_is_per_entry():
+    """Test store is per entry."""
+    with patch.object(warning, "Store") as store:
+        warning.warning_store("hass", "e1")
+    store.assert_called_once_with(
+        "hass", warning.STORAGE_VERSION, "hungaromet_weather_and_forecast.warnings.e1"
+    )
+
+
 @pytest.mark.parametrize("error", [aiohttp.ClientError("x"), TimeoutError(), ValueError("x")])
 async def test_coordinator_update_failure(error):
     """Test coordinator update failure."""
@@ -291,12 +360,16 @@ async def test_coordinator_update_failure(error):
 
 def test_coordinator_init():
     """Test coordinator init."""
-    entry = MagicMock()
+    entry = MagicMock(entry_id="e1")
     with (
         patch.object(warning.ScheduledCoordinator, "__init__", return_value=None) as init,
         patch.object(warning, "RetryingSchedule") as cls,
+        patch.object(warning, "warning_store") as store,
     ):
         coordinator = warning.WarningCoordinator("hass", entry, DEBRECEN)
+
+    store.assert_called_once_with("hass", "e1")
+    assert coordinator._store is store.return_value
 
     assert init.call_args.kwargs["update_interval"] is None
     assert init.call_args.kwargs["config_entry"] is entry
@@ -314,13 +387,16 @@ def test_coordinator_init():
     assert coordinator.schedule is cls.return_value
 
 
-def test_setup_schedules_and_registers_the_update():
+async def test_setup_schedules_and_registers_the_update():
     """Test setup schedules and registers the update."""
     entry = MagicMock(entry_id="e1")
     hass = MagicMock(data={})
-    coordinator = MagicMock()
+    coordinator = MagicMock(async_load_stored=AsyncMock())
     with patch.object(warning, "WarningCoordinator", return_value=coordinator) as cls:
-        assert warning.async_setup_warnings(hass, entry, DEBRECEN) is coordinator
+        assert await warning.async_setup_warnings(hass, entry, DEBRECEN) is coordinator
+
+    # The levels saved before a restart are loaded first
+    coordinator.async_load_stored.assert_awaited_once()
 
     cls.assert_called_once_with(hass, entry, DEBRECEN)
     unloads = [c.args[0] for c in entry.async_on_unload.call_args_list]

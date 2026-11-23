@@ -628,7 +628,7 @@ async def test_setup_forecast_schedules_refreshes():
     schedule = coordinator.schedule
     with (
         patch.object(forecast, "ForecastCoordinator", return_value=coordinator),
-        patch.object(forecast, "async_setup_warnings") as setup_warnings,
+        patch.object(forecast, "async_setup_warnings", AsyncMock()) as setup_warnings,
     ):
         assert await forecast.async_setup_forecast(hass, entry) is coordinator
 
@@ -645,7 +645,7 @@ async def test_setup_forecast_schedules_refreshes():
     # The forecast saved before a restart is loaded first
     coordinator.async_load_stored.assert_awaited_once()
     # The settlement's alerts and warnings come with the forecast
-    setup_warnings.assert_called_once_with(hass, entry, DEBRECEN)
+    setup_warnings.assert_awaited_once_with(hass, entry, DEBRECEN)
     assert coordinator.warnings is setup_warnings.return_value
 
 

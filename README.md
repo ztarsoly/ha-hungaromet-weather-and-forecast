@@ -188,7 +188,12 @@ A regionális radarkép, az előrejelzés, a riasztás és a figyelmeztetés a m
 
 ## Tárolt adatok
 
-Az integráció csak a legutóbbi előrejelzést menti a Home Assistant `.storage` mappájába (`hungaromet_weather_and_forecast.forecast.<bejegyzés azonosító>`), hogy újraindítás után is legyen előrejelzés, és a mai nap már levett sorai megmaradjanak. A bejegyzés törlésekor ez a fájl is törlődik.
+Az integráció a Home Assistant `.storage` mappájába menti:
+
+- a legutóbbi előrejelzést (`hungaromet_weather_and_forecast.forecast.<bejegyzés azonosító>`), hogy újraindítás után is legyen előrejelzés, és a mai nap már levett sorai megmaradjanak;
+- a legutóbbi riasztást és figyelmeztetést (`hungaromet_weather_and_forecast.warnings.<bejegyzés azonosító>`), hogy újraindítás után az első letöltésig is látszódjanak. Csak a mentés napján használja őket, mert a figyelmeztetés egy napra szól.
+
+A bejegyzés törlésekor ezek a fájlok is törlődnek.
 
 ## Köszönetnyilvánítás
 
