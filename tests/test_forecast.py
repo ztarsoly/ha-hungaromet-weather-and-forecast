@@ -768,6 +768,7 @@ def test_enum_sensors_list_their_states():
     assert by_key["wind_direction"].options == WIND_DIRECTION_STATES
     # None on Home Assistant versions without the wind direction device class
     assert by_key["wind_bearing"].device_class == WIND_DIRECTION
+    assert by_key["pressure"].device_class == SensorDeviceClass.ATMOSPHERIC_PRESSURE
     assert "exceptional" in CONDITION_STATES
     assert len(WIND_DIRECTION_STATES) == 16
     assert not {"calm", "variable"} & set(WIND_DIRECTION_STATES)

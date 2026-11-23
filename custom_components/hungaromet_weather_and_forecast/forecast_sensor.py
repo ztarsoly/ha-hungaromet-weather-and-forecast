@@ -59,7 +59,10 @@ FORECAST_SENSORS = (
     _measurement("wind_speed", UnitOfSpeed.KILOMETERS_PER_HOUR, SensorDeviceClass.WIND_SPEED),
     _measurement("wind_gust", UnitOfSpeed.KILOMETERS_PER_HOUR, SensorDeviceClass.WIND_SPEED),
     _measurement("wind_bearing", DEGREE, WIND_DIRECTION),
-    _measurement("pressure", UnitOfPressure.HPA, SensorDeviceClass.PRESSURE),
+    # met.hu forecasts the sea-level pressure, like the stations' p0
+    _measurement(
+        "pressure", UnitOfPressure.HPA, SensorDeviceClass.ATMOSPHERIC_PRESSURE
+    ),
     SensorEntityDescription(
         key="wind_direction",
         translation_key="forecast_wind_direction",
