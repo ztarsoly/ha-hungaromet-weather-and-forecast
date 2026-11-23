@@ -191,7 +191,8 @@ A regionális radarkép, az előrejelzés, a riasztás és a figyelmeztetés a m
 Az integráció a Home Assistant `.storage` mappájába menti:
 
 - a legutóbbi előrejelzést (`hungaromet_weather_and_forecast.forecast.<bejegyzés azonosító>`), hogy újraindítás után is legyen előrejelzés, és a mai nap már levett sorai megmaradjanak;
-- a legutóbbi riasztást és figyelmeztetést (`hungaromet_weather_and_forecast.warnings.<bejegyzés azonosító>`), hogy újraindítás után az első letöltésig is látszódjanak. Csak a mentés napján használja őket, mert a figyelmeztetés egy napra szól.
+- a legutóbbi riasztást és figyelmeztetést (`hungaromet_weather_and_forecast.warnings.<bejegyzés azonosító>`), hogy újraindítás után az első letöltésig is látszódjanak. A riasztást a letöltés után 3 óráig, a figyelmeztetést a letöltés napjának végéig használja, mert a riasztás a következő 3 órára, a figyelmeztetés egy napra szól. Ugyanez érvényes futás közben is, amíg a letöltés nem sikerül: utána az érzékelő értéke ismeretlen, amíg egy sikeres letöltés le nem cseréli.
+- az állomási adatsorok (napi, órás, tízperces) legutóbbi letöltését (`hungaromet_weather_and_forecast.stations.<bejegyzés azonosító>`). Ha újraindításkor vagy újratöltéskor egy adatsor letöltése nem sikerül, az érzékelői a mentett értékeket mutatják, ha azok egy óránál nem régebbiek, és ugyanazokra az állomásokra (távolságra és helyszínre) vonatkoznak. A régebbi értékeket nem használja, mert az érzékelők azokat aktuálisként mutatnák.
 
 A bejegyzés törlésekor ezek a fájlok is törlődnek.
 

@@ -13,6 +13,7 @@ from .forecast import sensor_location
 from .forecast_sensor import forecast_sensors
 from .scheduler import RetryingSchedule
 from .scope import EntryScope
+from .station_storage import SavedFeeds, station_store
 from .station_sensor import (
     FEEDS,
     MEASUREMENTS,
@@ -35,10 +36,13 @@ def _feed_sensors(sensors: list[FeedSensor], data_type: str) -> list[FeedSensor]
     ]
 
 
-async def _async_update_feed(hass, sensors, data_type, query: StationQuery):
+async def _async_update_feed(
+    hass, sensors, data_type, query: StationQuery, saved: SavedFeeds | None = None
+):
     """Download one feed once and update every added sensor that shows it.
 
-    Returns the feed's observation time, or None if nothing was updated.
+    The download is saved for a restart. Returns the feed's observation time,
+    or None if nothing was updated.
     """
     feed_sensors = _feed_sensors(sensors, data_type)
     if not feed_sensors:
@@ -61,6 +65,8 @@ async def _async_update_feed(hass, sensors, data_type, query: StationQuery):
     for sensor in feed_sensors:
         sensor.show(data, stations)
         sensor.async_write_ha_state()
+    if saved is not None:
+        await saved.async_save(data_type, data, stations)
     return data.get("time")
 
 
@@ -92,7 +98,9 @@ def _is_fresh(data_type, observed, scheduled_for):
     return datetime.fromisoformat(observed) >= expected
 
 
-def _async_start_feed_schedules(hass, sensors, query: StationQuery, config_entry=None):
+def _async_start_feed_schedules(
+    hass, sensors, query: StationQuery, config_entry=None, saved=None
+):
     """Start each feed's schedule and return the functions that stop them."""
     stops = []
     for data_type, (pattern, retry_delay) in FEED_SCHEDULES.items():
@@ -100,7 +108,9 @@ def _async_start_feed_schedules(hass, sensors, query: StationQuery, config_entry
         async def job(scheduled_for, data_type=data_type):
             if not _feed_sensors(sensors, data_type):
                 return True
-            observed = await _async_update_feed(hass, sensors, data_type, query)
+            observed = await _async_update_feed(
+                hass, sensors, data_type, query, saved
+            )
             return observed is not None and _is_fresh(
                 data_type, observed, scheduled_for
             )
@@ -113,12 +123,13 @@ def _async_start_feed_schedules(hass, sensors, query: StationQuery, config_entry
 
 
 async def _async_station_sensors(
-    hass, query: StationQuery
+    hass, query: StationQuery, saved: SavedFeeds | None = None
 ) -> tuple[list[FeedSensor], list[str]]:
     """Download each feed once and create its sensors with the first values.
 
-    A feed whose download fails still gets its sensors, without values. Returns
-    the sensors and the keys of the feeds that failed.
+    A feed whose download fails still gets its sensors, with the values saved
+    within the last hour, or without values. Returns the sensors and the keys
+    of the feeds that failed.
     """
     sensors: list[FeedSensor] = []
     failed: list[str] = []
@@ -133,7 +144,13 @@ async def _async_station_sensors(
                 feed.key, err, FIRST_RETRY_DELAY,
             )
             failed.append(feed.key)
-            data, stations = {}, []
+            recent = saved.recent(feed.key) if saved is not None else None
+            data, stations = recent or ({}, [])
+            if recent:
+                _LOGGER.info("Showing the saved %s values meanwhile", feed.key)
+        else:
+            if saved is not None:
+                await saved.async_save(feed.key, data, stations)
         sensors.extend(
             StationSensor(hass, feed, measurement, reading(data, measurement.key), query)
             for measurement in MEASUREMENTS[feed.key]
@@ -147,7 +164,7 @@ FIRST_RETRY_DELAY = timedelta(minutes=1)
 
 
 def _async_retry_first_download(
-    hass, sensors, data_type, query: StationQuery
+    hass, sensors, data_type, query: StationQuery, saved: SavedFeeds | None = None
 ) -> Callable[[], None]:
     """Download a feed again until it works, for sensors left without values.
 
@@ -161,7 +178,7 @@ def _async_retry_first_download(
         unsub = None
         if not _feed_sensors(sensors, data_type):
             return
-        if await _async_update_feed(hass, sensors, data_type, query) is None:
+        if await _async_update_feed(hass, sensors, data_type, query, saved) is None:
             unsub = async_call_later(hass, FIRST_RETRY_DELAY, attempt)
 
     unsub = async_call_later(hass, FIRST_RETRY_DELAY, attempt)
@@ -190,21 +207,25 @@ async def async_setup_entry(
         location=sensor_location(entry),
         scope=EntryScope.from_entry(entry),
     )
-    sensors, failed = await _async_station_sensors(hass, query)
+    saved = SavedFeeds(station_store(hass, entry.entry_id), query)
+    await saved.async_load()
+    sensors, failed = await _async_station_sensors(hass, query, saved)
     async_add_entities(sensors, True)
     for data_type in failed:
         entry.async_on_unload(
-            _async_retry_first_download(hass, sensors, data_type, query)
+            _async_retry_first_download(hass, sensors, data_type, query, saved)
         )
 
     async def update_entry():
         for data_type in FEEDS:
-            await _async_update_feed(hass, sensors, data_type, query)
+            await _async_update_feed(hass, sensors, data_type, query, saved)
 
     # The update service refreshes these feeds along with everything else
     entry.async_on_unload(
         async_register_updater(hass, f"{entry.entry_id}_feeds", update_entry)
     )
 
-    for stop in _async_start_feed_schedules(hass, sensors, query, config_entry=entry):
+    for stop in _async_start_feed_schedules(
+        hass, sensors, query, config_entry=entry, saved=saved
+    ):
         entry.async_on_unload(stop)

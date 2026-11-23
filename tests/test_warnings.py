@@ -3,7 +3,7 @@
 # The tests check the integration's internals
 # pylint: disable=protected-access
 
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -258,6 +258,7 @@ def _coordinator():
     coordinator.hass = MagicMock()
     coordinator.hass.async_add_executor_job = AsyncMock(return_value="903")
     coordinator._store = MagicMock(async_save=AsyncMock())
+    coordinator._fetched = None
     return coordinator
 
 
@@ -282,14 +283,15 @@ async def test_coordinator_finds_the_district_once():
 TODAY = datetime(2026, 11, 23, 0, 30, tzinfo=HUNGARY_TZ)
 SAVED = {
     "code": "725",
-    "day": "2026-11-23",
+    "fetched": TODAY.isoformat(),
     "alerts": {"thunderstorm": "yellow"},
     "warnings": {"wind_gust": "orange"},
 }
+LEVELS = Warnings(alerts={"thunderstorm": "yellow"}, warnings={"wind_gust": "orange"})
 
 
 async def test_each_download_is_saved():
-    """Test each download is saved, with the settlement and the day."""
+    """Test each download is saved, with the settlement and the time."""
     coordinator = _coordinator()
     data = Warnings(alerts={"thunderstorm": "yellow"}, warnings={"wind_gust": "orange"})
     with (
@@ -300,21 +302,27 @@ async def test_each_download_is_saved():
         await coordinator._async_update_data()
 
     coordinator._store.async_save.assert_awaited_once_with(SAVED)
+    assert coordinator._fetched == TODAY
 
 
-async def _load(stored):
+async def _load(stored, now=TODAY):
     coordinator = _coordinator()
     coordinator.data = None
     coordinator._store.async_load = AsyncMock(return_value=stored)
-    with patch.object(warning.dt_util, "now", return_value=TODAY):
+    with patch.object(warning.dt_util, "now", return_value=now):
         await coordinator.async_load_stored()
     return coordinator.data
 
 
 async def test_load_saved_levels():
-    """Test the levels saved today for the settlement are loaded."""
-    assert await _load(SAVED) == Warnings(
-        alerts={"thunderstorm": "yellow"}, warnings={"wind_gust": "orange"}
+    """Test the levels saved within 3 hours for the settlement are loaded."""
+    assert await _load(SAVED, TODAY + timedelta(hours=2, minutes=50)) == LEVELS
+
+
+async def test_load_keeps_the_warnings_until_the_end_of_the_day():
+    """Test alerts over 3 hours old are unknown, while today's warnings stay."""
+    assert await _load(SAVED, TODAY.replace(hour=23, minute=59)) == Warnings(
+        alerts=None, warnings={"wind_gust": "orange"}
     )
 
 
@@ -323,18 +331,83 @@ async def test_load_saved_levels():
     [
         None,  # nothing saved yet
         {**SAVED, "code": "2209"},  # another settlement (e.g. after Configure)
-        {**SAVED, "day": "2026-11-22"},  # the warnings of another day
+        # Saved yesterday (and over 3 hours ago): nothing holds any more
+        {**SAVED, "fetched": (TODAY - timedelta(hours=4)).isoformat()},
     ],
 )
-async def test_load_ignores_missing_other_settlements_and_other_days(stored):
-    """Test load ignores missing levels, other settlements and other days."""
+async def test_load_ignores_missing_other_settlements_and_old_levels(stored):
+    """Test load ignores missing levels, other settlements and old levels."""
     assert await _load(stored) is None
 
 
-async def test_load_ignores_unreadable_levels(caplog):
+@pytest.mark.parametrize(
+    "stored",
+    [
+        {**SAVED, "alerts": None},
+        {**SAVED, "fetched": "not a time"},
+        {key: value for key, value in SAVED.items() if key != "fetched"},
+    ],
+)
+async def test_load_ignores_unreadable_levels(stored, caplog):
     """Test load ignores unreadable levels."""
-    assert await _load({**SAVED, "alerts": None}) is None
+    assert await _load(stored) is None
     assert "Ignoring the saved warnings" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("hours", "expected"),
+    [
+        (3, LEVELS),
+        (3.2, Warnings(alerts=None, warnings={"wind_gust": "orange"})),
+        # 00:30 the next day in Hungary
+        (24, Warnings(alerts=None, warnings=None)),
+    ],
+)
+def test_levels_as_of(hours, expected):
+    """Test alerts hold for 3 hours and warnings until the end of the day."""
+    assert warning.levels_as_of(LEVELS, TODAY, TODAY + timedelta(hours=hours)) == expected
+
+
+async def test_failed_download_drops_the_levels_no_longer_holding():
+    """Test a failed download leaves only the levels still holding."""
+    coordinator = _coordinator()
+    coordinator.data = LEVELS
+    coordinator._fetched = TODAY
+    coordinator.async_update_listeners = MagicMock()
+    later = TODAY + timedelta(hours=4)
+    with (
+        patch.object(
+            warning.ScheduledCoordinator,
+            "_async_scheduled_download",
+            AsyncMock(return_value=False),
+        ),
+        patch.object(warning.dt_util, "now", return_value=later),
+    ):
+        assert await coordinator._async_scheduled_download() is False
+
+    assert coordinator.data == Warnings(alerts=None, warnings={"wind_gust": "orange"})
+    coordinator.async_update_listeners.assert_called_once()
+
+
+@pytest.mark.parametrize(("fresh", "fetched"), [(True, TODAY), (False, None)])
+async def test_download_leaves_the_levels_alone(fresh, fetched):
+    """Test a successful download, or levels never downloaded, are left as they are."""
+    coordinator = _coordinator()
+    coordinator.data = LEVELS
+    coordinator._fetched = fetched
+    coordinator.async_update_listeners = MagicMock()
+    with (
+        patch.object(
+            warning.ScheduledCoordinator,
+            "_async_scheduled_download",
+            AsyncMock(return_value=fresh),
+        ),
+        patch.object(warning.dt_util, "now", return_value=TODAY + timedelta(days=2)),
+    ):
+        assert await coordinator._async_scheduled_download() is fresh
+
+    assert coordinator.data == LEVELS
+    coordinator.async_update_listeners.assert_not_called()
 
 
 def test_store_is_per_entry():
