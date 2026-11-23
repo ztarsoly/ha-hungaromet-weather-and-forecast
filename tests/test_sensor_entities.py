@@ -256,6 +256,8 @@ def test_feed_sensors_must_say_what_they_show():
     """Test feed sensors must say what they show."""
     with pytest.raises(NotImplementedError):
         FeedSensor(None, FEEDS["daily"], QUERY).show({}, [])
+    with pytest.raises(NotImplementedError):
+        FeedSensor(None, FEEDS["daily"], QUERY).clear()
 
 
 # National radar image

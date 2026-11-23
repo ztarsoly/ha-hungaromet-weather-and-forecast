@@ -11,7 +11,6 @@ from .const import CONF_ENTRY_TYPE, DOMAIN, ENTRY_TYPE_RADAR
 from .forecast import async_setup_forecast, forecast_store
 from .radar import remove_saved_gifs
 from .scope import is_radar_entry
-from .station_storage import station_store
 from .updaters import async_register_update_service
 from .warning import warning_store
 
@@ -139,10 +138,9 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    """Delete the entry's saved forecast, alerts, warnings and station values."""
+    """Delete the entry's saved forecast, alerts and warnings."""
     await forecast_store(hass, entry.entry_id).async_remove()
     await warning_store(hass, entry.entry_id).async_remove()
-    await station_store(hass, entry.entry_id).async_remove()
 
 
 async def _async_reload_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:

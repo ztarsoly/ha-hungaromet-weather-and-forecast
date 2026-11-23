@@ -235,6 +235,10 @@ class FeedSensor(SensorEntity):
         """Take this sensor's value from a download of its feed."""
         raise NotImplementedError
 
+    def clear(self) -> None:
+        """Drop the value shown, which is too old (the sensor becomes unknown)."""
+        raise NotImplementedError
+
 
 class StationSensor(FeedSensor):
     """One measurement of a feed, averaged over the selected stations."""
@@ -305,6 +309,9 @@ class StationSensor(FeedSensor):
         if value is not None:
             self._value = value
 
+    def clear(self) -> None:
+        self._value = None
+
 
 class StationsSensor(FeedSensor):
     """The stations whose measurements a feed's sensors average."""
@@ -338,3 +345,6 @@ class StationsSensor(FeedSensor):
 
     def show(self, data: dict, stations: list[dict]) -> None:
         self._stations = stations
+
+    def clear(self) -> None:
+        self._stations = []
