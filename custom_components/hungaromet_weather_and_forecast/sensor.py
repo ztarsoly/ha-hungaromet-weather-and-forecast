@@ -2,12 +2,11 @@
 
 import logging
 from collections.abc import Callable
-from datetime import UTC, date, datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_call_later
-from homeassistant.util import dt as dt_util
 
 from .const import CONF_DISTANCE_KM, DEFAULT_DISTANCE_KM, DOMAIN
 from .forecast import sensor_location
@@ -36,37 +35,9 @@ def _feed_sensors(sensors: list[FeedSensor], data_type: str) -> list[FeedSensor]
     ]
 
 
-# How long after its observation a feed's values are shown while its downloads
-# fail: until an hour after its next file was due (see FEED_SCHEDULES). The
-# daily feed's age counts from the start of its day (UTC).
-FEED_MAX_AGE = {
-    "daily": timedelta(days=2, hours=10, minutes=35),
-    "hourly": timedelta(hours=2, minutes=20),
-    "ten_minutes": timedelta(hours=1, minutes=20),
-}
-
-
-def _expired(data_type: str, observed: str | None, now: datetime) -> bool:
-    """Return whether values observed at `observed` are too old to show at `now`."""
-    if not observed:
-        return False
-    try:
-        moment = datetime.fromisoformat(observed)
-    except ValueError:
-        return False
-    if moment.tzinfo is None:
-        # The daily feed's day
-        moment = moment.replace(tzinfo=UTC)
-    return now - moment > FEED_MAX_AGE[data_type]
-
-
-async def _async_update_feed(
-    hass, sensors, data_type, query: StationQuery, observed: dict | None = None
-):
+async def _async_update_feed(hass, sensors, data_type, query: StationQuery):
     """Download one feed once and update every added sensor that shows it.
 
-    `observed` holds each feed's observation time shown. When the download
-    fails and the values shown are over FEED_MAX_AGE, the sensors are cleared.
     Returns the feed's observation time, or None if nothing was updated.
     """
     feed_sensors = _feed_sensors(sensors, data_type)
@@ -85,21 +56,11 @@ async def _async_update_feed(
         # A failed download (network, missing file, unexpected CSV) must not
         # stop the schedule; it is retried
         _LOGGER.error("Error updating %s sensors: %s", data_type, err)
-        if observed is not None and _expired(
-            data_type, observed.get(data_type), dt_util.utcnow()
-        ):
-            _LOGGER.info("Clearing the %s values, which are too old", data_type)
-            del observed[data_type]
-            for sensor in feed_sensors:
-                sensor.clear()
-                sensor.async_write_ha_state()
         return None
 
     for sensor in feed_sensors:
         sensor.show(data, stations)
         sensor.async_write_ha_state()
-    if observed is not None:
-        observed[data_type] = data.get("time")
     return data.get("time")
 
 
@@ -131,9 +92,7 @@ def _is_fresh(data_type, observed, scheduled_for):
     return datetime.fromisoformat(observed) >= expected
 
 
-def _async_start_feed_schedules(
-    hass, sensors, query: StationQuery, config_entry=None, observed=None
-):
+def _async_start_feed_schedules(hass, sensors, query: StationQuery, config_entry=None):
     """Start each feed's schedule and return the functions that stop them."""
     stops = []
     for data_type, (pattern, retry_delay) in FEED_SCHEDULES.items():
@@ -141,8 +100,10 @@ def _async_start_feed_schedules(
         async def job(scheduled_for, data_type=data_type):
             if not _feed_sensors(sensors, data_type):
                 return True
-            latest = await _async_update_feed(hass, sensors, data_type, query, observed)
-            return latest is not None and _is_fresh(data_type, latest, scheduled_for)
+            observed = await _async_update_feed(hass, sensors, data_type, query)
+            return observed is not None and _is_fresh(
+                data_type, observed, scheduled_for
+            )
 
         schedule = RetryingSchedule(
             hass, data_type, job, retry_delay, config_entry=config_entry, **pattern
@@ -152,13 +113,12 @@ def _async_start_feed_schedules(
 
 
 async def _async_station_sensors(
-    hass, query: StationQuery, observed: dict | None = None
+    hass, query: StationQuery
 ) -> tuple[list[FeedSensor], list[str]]:
     """Download each feed once and create its sensors with the first values.
 
-    A feed whose download fails still gets its sensors, without values. Returns
-    the sensors and the keys of the feeds that failed; `observed` gets the
-    observation times of the others.
+    A feed whose download fails still gets its sensors, unavailable until a
+    download works. Returns the sensors and the keys of the feeds that failed.
     """
     sensors: list[FeedSensor] = []
     failed: list[str] = []
@@ -174,14 +134,15 @@ async def _async_station_sensors(
             )
             failed.append(feed.key)
             data, stations = {}, []
-        else:
-            if observed is not None:
-                observed[feed.key] = data.get("time")
-        sensors.extend(
+        feed_sensors: list[FeedSensor] = [
             StationSensor(hass, feed, measurement, reading(data, measurement.key), query)
             for measurement in MEASUREMENTS[feed.key]
-        )
-        sensors.append(StationsSensor(hass, feed, stations, query))
+        ]
+        feed_sensors.append(StationsSensor(hass, feed, stations, query))
+        if feed.key in failed:
+            for sensor in feed_sensors:
+                sensor.wait_for_download()
+        sensors.extend(feed_sensors)
     return sensors, failed
 
 
@@ -190,7 +151,7 @@ FIRST_RETRY_DELAY = timedelta(minutes=1)
 
 
 def _async_retry_first_download(
-    hass, sensors, data_type, query: StationQuery, observed: dict | None = None
+    hass, sensors, data_type, query: StationQuery
 ) -> Callable[[], None]:
     """Download a feed again until it works, for sensors left without values.
 
@@ -204,7 +165,7 @@ def _async_retry_first_download(
         unsub = None
         if not _feed_sensors(sensors, data_type):
             return
-        if await _async_update_feed(hass, sensors, data_type, query, observed) is None:
+        if await _async_update_feed(hass, sensors, data_type, query) is None:
             unsub = async_call_later(hass, FIRST_RETRY_DELAY, attempt)
 
     unsub = async_call_later(hass, FIRST_RETRY_DELAY, attempt)
@@ -233,25 +194,21 @@ async def async_setup_entry(
         location=sensor_location(entry),
         scope=EntryScope.from_entry(entry),
     )
-    # Each feed's observation time shown, to clear values too old to show
-    observed: dict[str, str | None] = {}
-    sensors, failed = await _async_station_sensors(hass, query, observed)
+    sensors, failed = await _async_station_sensors(hass, query)
     async_add_entities(sensors, True)
     for data_type in failed:
         entry.async_on_unload(
-            _async_retry_first_download(hass, sensors, data_type, query, observed)
+            _async_retry_first_download(hass, sensors, data_type, query)
         )
 
     async def update_entry():
         for data_type in FEEDS:
-            await _async_update_feed(hass, sensors, data_type, query, observed)
+            await _async_update_feed(hass, sensors, data_type, query)
 
     # The update service refreshes these feeds along with everything else
     entry.async_on_unload(
         async_register_updater(hass, f"{entry.entry_id}_feeds", update_entry)
     )
 
-    for stop in _async_start_feed_schedules(
-        hass, sensors, query, config_entry=entry, observed=observed
-    ):
+    for stop in _async_start_feed_schedules(hass, sensors, query, config_entry=entry):
         entry.async_on_unload(stop)

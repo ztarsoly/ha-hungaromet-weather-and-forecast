@@ -231,12 +231,23 @@ class FeedSensor(SensorEntity):
         self.show(data, stations)
         self.async_write_ha_state()
 
-    def show(self, data: dict, stations: list[dict]) -> None:
-        """Take this sensor's value from a download of its feed."""
-        raise NotImplementedError
+    def wait_for_download(self) -> None:
+        """Make the sensor unavailable until its feed is downloaded.
 
-    def clear(self) -> None:
-        """Drop the value shown, which is too old (the sensor becomes unknown)."""
+        For a feed whose first download failed after a restart or reload:
+        nothing was downloaded yet, so there is no value to show.
+        """
+        self._attr_available = False
+
+    def show(self, data: dict, stations: list[dict]) -> None:
+        """Take this sensor's value from a download of its feed.
+
+        The value is kept until the next successful download, however old.
+        """
+        self._attr_available = True
+        self._show(data, stations)
+
+    def _show(self, data: dict, stations: list[dict]) -> None:
         raise NotImplementedError
 
 
@@ -303,14 +314,11 @@ class StationSensor(FeedSensor):
             _LOGGER.warning("Failed to read the %s measurement time: %s", self._feed.key, err)
             return None
 
-    def show(self, data: dict, stations: list[dict]) -> None:
+    def _show(self, data: dict, stations: list[dict]) -> None:
         # A value missing from this download keeps the last one
         value = reading(data, self._measurement.key)
         if value is not None:
             self._value = value
-
-    def clear(self) -> None:
-        self._value = None
 
 
 class StationsSensor(FeedSensor):
@@ -343,8 +351,5 @@ class StationsSensor(FeedSensor):
             "raw_data": rows,
         }
 
-    def show(self, data: dict, stations: list[dict]) -> None:
+    def _show(self, data: dict, stations: list[dict]) -> None:
         self._stations = stations
-
-    def clear(self) -> None:
-        self._stations = []

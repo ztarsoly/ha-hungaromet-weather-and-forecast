@@ -77,10 +77,10 @@ PEST = 13
 @dataclass
 class Warnings:
     """The level of each phenomenon, for the district's alerts and the county's
-    warnings for today. None: no longer known (kept too long without a download)."""
+    warnings for today."""
 
-    alerts: dict[str, str] | None = field(default_factory=dict)
-    warnings: dict[str, str] | None = field(default_factory=dict)
+    alerts: dict[str, str] = field(default_factory=dict)
+    warnings: dict[str, str] = field(default_factory=dict)
 
 
 @cache

@@ -153,7 +153,10 @@ async def test_a_failed_first_download_still_adds_the_sensors_and_retries(caplog
     daily = [s for s in sensors if s.feed.key == "daily"]
     assert len(daily) == 29
     assert {s.native_value for s in daily} == {None, 0}  # no values, no stations
+    # Unavailable, not unknown: nothing was downloaded since the restart
+    assert not any(s.available for s in daily)
     assert sensors[-1].native_value == 1  # the other feeds have theirs
+    assert all(s.available for s in sensors if s.feed.key != "daily")
     assert "Error updating daily sensors" in caplog.text
     ((hass_arg, delay, attempt),) = [c.args for c in call_later.call_args_list]
     assert (hass_arg, delay) == (hass, sensor.FIRST_RETRY_DELAY)
