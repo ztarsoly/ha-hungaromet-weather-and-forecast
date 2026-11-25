@@ -53,7 +53,7 @@ Az integráció a felhasználói felületen állítható be:
 | Mező | Jelentés |
 |---|---|
 | **Név** | A helyszín neve; az eszközök nevének eleje lesz (pl. `Pécs` → *Pécs Napi Időjárás*) |
-| **Állomáskeresési sugár (km)** | A helytől ennyi kilométeren belüli állomások átlagát adják az érzékelők (1–100 km, alapértelmezés: 20 km). Ha egy állomás sincs ilyen közel, a legközelebbi állomás adatait használja. |
+| **Állomáskeresési sugár (km)** | A helytől ennyi kilométeren belüli állomások átlagát adják az érzékelők (1–100 km, alapértelmezés: 20 km). Az adat nélküli (nem elérhető) állomásokat nem veszi figyelembe. Ha egy elérhető állomás sincs ilyen közel, a legközelebbi elérhető állomás adatait használja. |
 | **Előrejelzés települése** | Nem kötelező. Egy magyarországi település (pl. `Debrecen`) az előrejelzéshez, ékezetekkel, helyesen írva; a nevet a met.hu-n keresi meg az integráció. Üresen hagyva nincs előrejelzés. |
 | **Időjárás-érzékelők helye** | Honnan mérje az állomáskeresési sugarat: a Home Assistant otthoni helyétől (**Otthon**) vagy az előrejelzés településétől (**Előrejelzés települése**) |
 

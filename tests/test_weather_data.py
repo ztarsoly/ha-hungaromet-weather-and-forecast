@@ -459,6 +459,41 @@ def test_select_stations_falls_back_to_nearest(caplog):
     assert "using nearest station Mid" in caplog.text
 
 
+def _with_readings(*temperatures):
+    df = _stations_df().iloc[: len(temperatures)].copy()
+    df["t"] = temperatures
+    return df
+
+
+def test_select_stations_leaves_out_stations_without_data():
+    """A station with no readings is not available, even in range."""
+    df = _with_readings(None, 5.0, 6.0)
+
+    result = select_stations(df, 47.5, 19.0, 30)
+
+    assert list(result["StationName"]) == ["Mid"]
+
+
+def test_select_stations_uses_nearest_with_data_when_the_only_one_in_range_has_none(
+    caplog,
+):
+    """Only the nearest station is in range but has no data: the nearest with data is used."""
+    df = _with_readings(None, 5.0, 6.0)
+
+    result = select_stations(df, 47.5, 19.0, 5)
+
+    assert list(result["StationName"]) == ["Mid"]
+    assert "No HungaroMet station with data within 5 km" in caplog.text
+
+
+def test_select_stations_raises_when_no_station_has_data():
+    """A clear error is raised when every station is without data."""
+    df = _with_readings(None, None, None)
+
+    with pytest.raises(ValueError, match="has data"):
+        select_stations(df, 47.5, 19.0, 20)
+
+
 def test_select_stations_ignores_stations_without_coordinates():
     """Stations with unparseable coordinates are never selected."""
     df = _stations_df()

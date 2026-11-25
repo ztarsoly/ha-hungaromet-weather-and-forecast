@@ -123,20 +123,37 @@ def latest_observations(df: pd.DataFrame) -> pd.DataFrame:
     return df[df["Time"] == df["Time"].max()]
 
 
+# The columns that identify and place a station, not measurements
+NOT_MEASUREMENTS = {
+    "Time", "StationNumber", "StationName", "Latitude", "Longitude", "Elevation",
+    "Distance_km",
+}
+
+
 def select_stations(
     df: pd.DataFrame, ref_lat: float, ref_lon: float, distance_km: float
 ) -> pd.DataFrame:
-    """Keep stations within distance_km, or the nearest one if none are in range."""
+    """Keep the stations with data within distance_km, or the nearest one with
+    data if none are in range.
+
+    A station whose readings are all missing (-999) is not available, so it
+    is left out like a station that is not in the file.
+    """
     df = add_distance_column(df, ref_lat, ref_lon)
     df = df.dropna(subset=["Distance_km"]).sort_values(by="Distance_km")
     if df.empty:
         raise ValueError("No HungaroMet station has valid coordinates.")
+    measured = [column for column in df.columns if column not in NOT_MEASUREMENTS]
+    if measured:
+        df = df[df[measured].notna().any(axis=1)]
+        if df.empty:
+            raise ValueError("No HungaroMet station has data.")
     in_range = df[df["Distance_km"] <= distance_km]
     if not in_range.empty:
         return in_range
     nearest = df.iloc[0]
     _LOGGER.warning(
-        "No HungaroMet station within %s km; using nearest station %s (%.1f km)",
+        "No HungaroMet station with data within %s km; using nearest station %s (%.1f km)",
         distance_km,
         nearest["StationName"],
         nearest["Distance_km"],
