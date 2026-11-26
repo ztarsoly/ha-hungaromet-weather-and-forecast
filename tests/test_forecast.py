@@ -36,7 +36,6 @@ from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     condition_for,
     fetch_forecast,
     forecast_to_dict,
-    find_current,
     lookup_settlement,
     mean_bearing,
     parse_page,
@@ -191,8 +190,6 @@ def test_current_period_is_the_current_hour(data):
     # 10:30 falls in the 10:00 hour, interpolated between 07:00 and 13:00
     assert data.current.forecast_time.hour == 10
     assert data.current.temperature == 10.0
-    late = NOW + timedelta(days=5)
-    assert find_current(data.periods, late) is data.periods[-1]
 
 
 def test_daily_summary(data):
@@ -573,6 +570,8 @@ def _coordinator():
     coordinator.hass = MagicMock()
     coordinator.settlement = DEBRECEN
     coordinator.data = None  # nothing downloaded before
+    coordinator._saved = None
+    coordinator.last_update_success = True
     coordinator._store = MagicMock(async_save=AsyncMock(), async_load=AsyncMock())
     return coordinator
 

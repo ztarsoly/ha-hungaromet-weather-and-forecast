@@ -152,7 +152,7 @@ A met.hu a sorokat 4 órával az időpontjuk után leveszi az oldalról. Az inte
 
 ### Radarképek
 
-Mindkét radarkép a legutóbbi 6 képkocka (30 perc) animációja: képkockánként 1 másodperc, az utolsón 2 másodperc. Minden frissítéskor csak az új képkocka töltődik le, a legrégebbi kiesik. Az animáció csak a memóriában van, a lemezre nem kerül.
+Mindkét radarkép a legutóbbi 6 képkocka (30 perc) animációja: képkockánként 1 másodperc, az utolsón 2 másodperc. Minden frissítéskor csak az új képkocka töltődik le, a legrégebbi kiesik. Az animáció csak a memóriában van, a lemezre nem kerül. Ha a listázott képkockák bármelyike nem tölthető le, a kép nem elérhető, amíg mind meg nem érkezik.
 
 ## Frissítés
 
@@ -169,10 +169,22 @@ Az időpontok UTC szerintiek (télen a magyar idő UTC+1, nyáron UTC+2).
 
 Az újrapróbálkozás legfeljebb a következő ütemezett frissítésig tart. Ezen felül:
 
-- Indításkor és a bejegyzés újratöltésekor minden azonnal frissül.
+- Indításkor és a bejegyzés újratöltésekor minden azonnal frissül. Ami ekkor nem sikerül, azt az integráció az ütemezett próbálkozások mellett percenként is újrapróbálja, amíg először nem sikerül.
 - A `hungaromet_weather_and_forecast.update` szolgáltatás azonnal frissít mindent: minden bejegyzés időjárás-érzékelőit, előrejelzését, riasztását és figyelmeztetését, valamint a regionális és az országos radarképet. Egy-egy entitás a Home Assistant `homeassistant.update_entity` szolgáltatásával is frissíthető.
 - A letiltott entitások adatai nem töltődnek le.
 - Ha a bejegyzés rendszerbeállításaiban kikapcsolja a frissítések lekérdezését (*Enable polling for updates*), az ütemezett frissítések elmaradnak; a fenti szolgáltatások ilyenkor is működnek.
+
+## Nem elérhető entitások
+
+Az érzékelők, az időjárás-entitás és a radarképek *ismeretlen* érték és elavult adat helyett **nem elérhetők** (unavailable):
+
+- ha a legutóbbi letöltésük nem sikerült, a következő sikeres letöltésig (az előrejelzés kivételével, lásd lent);
+- ha a sikeres letöltésben nincs értékük, például az állomások nem mérik az adott mennyiséget;
+- ha az előrejelzés nem tartalmazza az aktuális órát. Ez az első telepítés után fordulhat elő, legfeljebb a következő előrejelzési sor időpontjáig. Ilyenkor az időjárás-entitás előrejelzése sem érhető el.
+
+**Kivétel az előrejelzés:** ha a letöltése nem sikerül, az előrejelzés-érzékelők és az időjárás-entitás az utolsó letöltött (újraindítás után a mentett) előrejelzést követik óráról órára. Csak akkor nem elérhetők, ha abban már nincs benne az aktuális óra. A riasztás és a figyelmeztetés ilyenkor is nem elérhető.
+
+A sikertelen letöltést az integráció egyszer, figyelmeztetésként (WARNING) írja a naplóba, a következő sikeres letöltést pedig szintén egyszer. A közbenső sikertelen próbálkozások nem kerülnek a naplóba.
 
 ## Adatforrások
 
@@ -188,14 +200,9 @@ A regionális radarkép, az előrejelzés, a riasztás és a figyelmeztetés a m
 
 ## Tárolt adatok
 
-Az integráció a Home Assistant `.storage` mappájába menti:
+Az integráció a Home Assistant `.storage` mappájába csak a legutóbbi előrejelzést menti (`hungaromet_weather_and_forecast.forecast.<bejegyzés azonosító>`). A mentett előrejelzés pótolja egy sikeres letöltésből hiányzó, a met.hu oldaláról már levett sorokat, és ez látszik, amíg az újraindítás utáni letöltés nem sikerül. A bejegyzés törlésekor ez a fájl is törlődik.
 
-- a legutóbbi előrejelzést (`hungaromet_weather_and_forecast.forecast.<bejegyzés azonosító>`), hogy újraindítás után is legyen előrejelzés, és a mai nap már levett sorai megmaradjanak;
-- a legutóbbi riasztást és figyelmeztetést (`hungaromet_weather_and_forecast.warnings.<bejegyzés azonosító>`), hogy újraindítás után az első letöltésig is látszódjanak, akármilyen régiek.
-
-A bejegyzés törlésekor ezek a fájlok is törlődnek.
-
-Az állomási mérések (napi, órás, 10 perces) nincsenek mentve: ha újraindítás után egy adatsor letöltése nem sikerül, az érzékelői az első sikeres letöltésig nem elérhetők (unavailable). Ha futás közben nem sikerül a letöltés, az érzékelők az utolsó értékeket mutatják, akármeddig, amíg egy sikeres letöltés le nem cseréli őket.
+A riasztás, a figyelmeztetés, az állomási mérések és a radarképek nincsenek mentve. A korábbi verziók riasztás- és figyelmeztetésfájlját az integráció törli.
 
 ## Köszönetnyilvánítás
 

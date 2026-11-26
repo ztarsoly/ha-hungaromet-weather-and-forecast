@@ -26,7 +26,7 @@ STORAGE_VERSION = 1
 
 
 def warning_store(hass: HomeAssistant, entry_id: str) -> Store:
-    """Return where an entry's last alerts and warnings are saved (in /config/.storage)."""
+    """Return where versions up to 1.3.8 saved an entry's alerts and warnings."""
     return Store(hass, STORAGE_VERSION, f"{DOMAIN}.warnings.{entry_id}")
 
 
@@ -45,7 +45,6 @@ class WarningCoordinator(ScheduledCoordinator[Warnings]):
         )
         self.settlement = settlement
         self.district: str | None = None
-        self._store = warning_store(hass, entry.entry_id)
         self.schedule = RetryingSchedule(
             hass,
             "warnings",
@@ -55,22 +54,6 @@ class WarningCoordinator(ScheduledCoordinator[Warnings]):
             **WARNING_SCHEDULE,
         )
 
-    async def async_load_stored(self) -> None:
-        """Start from the levels saved before a restart, if they are still ours.
-
-        They show until the first download, however old. Levels saved for
-        another settlement are not used.
-        """
-        stored = await self._store.async_load()
-        if not stored or stored.get("code") != self.settlement.kod:
-            return
-        try:
-            self.data = Warnings(
-                alerts=dict(stored["alerts"]), warnings=dict(stored["warnings"])
-            )
-        except (KeyError, TypeError, ValueError) as err:
-            _LOGGER.warning("Ignoring the saved warnings, which are unreadable: %s", err)
-
     async def _async_update_data(self) -> Warnings:
         if self.district is None:
             self.district = await self.hass.async_add_executor_job(
@@ -78,19 +61,11 @@ class WarningCoordinator(ScheduledCoordinator[Warnings]):
             )
         session = async_get_clientsession(self.hass)
         try:
-            data = await fetch_warnings(session, self.district)
+            return await fetch_warnings(session, self.district)
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
             raise UpdateFailed(
                 f"met.hu warnings for {self.settlement.name} failed: {err}"
             ) from err
-        await self._store.async_save(
-            {
-                "code": self.settlement.kod,
-                "alerts": data.alerts,
-                "warnings": data.warnings,
-            }
-        )
-        return data
 
 
 async def async_setup_warnings(
@@ -101,7 +76,9 @@ async def async_setup_warnings(
     The first download is left to the caller, once the entities are added.
     """
     coordinator = WarningCoordinator(hass, entry, settlement)
-    await coordinator.async_load_stored()
+    # A download is complete or fails, so there is nothing saved values could
+    # fill in: delete the file earlier versions saved
+    await warning_store(hass, entry.entry_id).async_remove()
     entry.async_on_unload(coordinator.schedule.start())
     entry.async_on_unload(
         async_register_updater(

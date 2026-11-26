@@ -203,8 +203,8 @@ def test_frame_time_and_freshness():
     assert not _frame_is_fresh(None, datetime(2026, 10, 27, 8, 5, 59, tzinfo=UTC))
 
 
-async def test_radar_failed_rebuild_keeps_previous_state():
-    """Test radar failed rebuild keeps previous state."""
+async def test_radar_failed_rebuild_is_unavailable():
+    """Test a failed radar rebuild makes the image unavailable."""
     hass = SimpleNamespace(
         async_add_executor_job=AsyncMock(return_value=(None, None)), data={}, bus=MagicMock()
     )
@@ -215,7 +215,8 @@ async def test_radar_failed_rebuild_keeps_previous_state():
     assert await image.async_update_data() is None
 
     assert image.image_last_updated is None
-    image.async_write_ha_state.assert_not_called()
+    assert image.available is False
+    image.async_write_ha_state.assert_called_once()
 
 
 def test_latest_observations_drops_late_corrections():

@@ -67,14 +67,15 @@ async def test_feed_update_downloads_once_and_updates_its_sensors():
     daily_stations.async_write_ha_state.assert_not_called()
 
 
-async def test_feed_update_keeps_value_when_feed_lacks_it():
-    """Test feed update keeps value when feed lacks it."""
+async def test_a_value_missing_from_a_download_makes_the_sensor_unavailable():
+    """Test a value missing from a download makes the sensor unavailable."""
     hass = _hass(({"average_t": None}, []))
     sensor = _added(_value(hass, "ten_minutes", "t", 3.0))
 
     await _async_update_feed(hass, [sensor], "ten_minutes", QUERY)
 
-    assert sensor.native_value == 3.0
+    assert sensor.native_value is None
+    assert not sensor.available
 
 
 async def test_feed_update_skips_download_without_added_sensors():
@@ -93,7 +94,7 @@ async def test_feed_update_makes_waiting_sensors_available():
     temperature = _added(_value(hass, "hourly", "t", None))
     stations = _added(_stations(hass, "hourly"))
     for sensor in (temperature, stations):
-        sensor.wait_for_download()
+        sensor.mark_download_failed()
         assert not sensor.available
 
     await _async_update_feed(hass, [temperature, stations], "hourly", QUERY)
@@ -102,16 +103,41 @@ async def test_feed_update_makes_waiting_sensors_available():
     assert stations.available and stations.native_value == 1
 
 
-async def test_feed_update_logs_download_errors(caplog):
-    """Test feed update logs download errors."""
+async def test_failed_downloads_are_logged_once_and_so_is_the_recovery(caplog):
+    """Test failed downloads make sensors unavailable and are logged once."""
+    hass = SimpleNamespace(async_add_executor_job=AsyncMock(side_effect=OSError("down")))
+    query = StationQuery()
+    sensor = _added(_value(hass, "daily", "t", 1.0))
+
+    await _async_update_feed(hass, [sensor], "daily", query)
+    await _async_update_feed(hass, [sensor], "daily", query)
+
+    assert not sensor.available
+    assert sensor.async_write_ha_state.call_count == 2
+    assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
+        ("WARNING", "HungaroMet daily weather download failed: down")
+    ]
+
+    caplog.clear()
+    hass.async_add_executor_job = AsyncMock(return_value=({"t": 2.0}, []))
+    await _async_update_feed(hass, [sensor], "daily", query)
+    await _async_update_feed(hass, [sensor], "daily", query)
+
+    assert sensor.available and sensor.native_value == 2.0
+    assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
+        ("WARNING", "HungaroMet daily weather download works again")
+    ]
+
+
+async def test_a_failed_entity_update_makes_the_sensor_unavailable():
+    """Test a failed update_entity makes the sensor unavailable."""
     hass = SimpleNamespace(async_add_executor_job=AsyncMock(side_effect=OSError("down")))
     sensor = _added(_value(hass, "daily", "t", 1.0))
 
-    await _async_update_feed(hass, [sensor], "daily", QUERY)
+    await sensor.async_update()
 
-    # The last value stays, however long the downloads fail
-    assert sensor.available and sensor.native_value == 1.0
-    assert "Error updating daily sensors: down" in caplog.text
+    assert not sensor.available
+    sensor.async_write_ha_state.assert_called_once()
 
 
 @pytest.mark.parametrize(

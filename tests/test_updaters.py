@@ -9,6 +9,7 @@ from custom_components.hungaromet_weather_and_forecast import async_setup, updat
 from custom_components.hungaromet_weather_and_forecast import weather as weather_platform
 from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     ForecastData,
+    ForecastPeriod,
 )
 from custom_components.hungaromet_weather_and_forecast.forecast_sensor import (
     forecast_sensors,
@@ -93,20 +94,32 @@ def _coordinator(data, success):
     return MagicMock(data=data, last_update_success=success, config_entry=ENTRY)
 
 
+_FORECAST = ForecastData(
+    settlement="X",
+    current=ForecastPeriod(temperature=5.0, weather_condition="sunny"),
+)
+
+
 @pytest.mark.parametrize(
     ("data", "success", "available"),
     [
-        (ForecastData(settlement="X"), True, True),
-        # A failed download keeps the last forecast showing
-        (ForecastData(settlement="X"), False, True),
+        (_FORECAST, True, True),
+        # A failed download leaves the last forecast
+        (_FORECAST, False, True),
         # Nothing downloaded yet
-        (None, False, False),
+        (None, True, False),
+        # A download without the current hour
+        (ForecastData(settlement="X"), True, False),
     ],
 )
-def test_forecast_entities_keep_their_last_values(data, success, available):
-    """Test forecast entities keep their last values."""
+def test_forecast_entities_are_unavailable_without_a_download_or_value(
+    data, success, available
+):
+    """Test forecast entities are unavailable without a download or a value."""
     coordinator = _coordinator(data, success)
-    assert all(s.available is available for s in forecast_sensors(coordinator))
+    sensors = {s.entity_description.key: s for s in forecast_sensors(coordinator)}
+    assert sensors["temperature"].available is available
+    assert sensors["precipitation"].available is False  # no value
 
     with patch.object(
         weather_platform.SingleCoordinatorWeatherEntity, "__init__", return_value=None
@@ -114,3 +127,8 @@ def test_forecast_entities_keep_their_last_values(data, success, available):
         entity = weather_platform.HungarometForecastWeather(coordinator)
     entity.coordinator = coordinator
     assert entity.available is available
+    if not available:
+        # No old forecast either
+        # pylint: disable=protected-access
+        assert entity._async_forecast_daily() is None
+        assert entity._async_forecast_hourly() is None

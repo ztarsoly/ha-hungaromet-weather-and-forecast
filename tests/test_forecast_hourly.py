@@ -17,7 +17,6 @@ from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     _derive,
     bearing_to_direction,
     continue_from_recorded,
-    current_period,
     find_current_hour,
     interpolate_hourly,
     keep_dropped_row,
@@ -170,14 +169,12 @@ def test_find_current_hour():
 
 def _data():
 
-    periods = [_at(28, 13, temperature=16), _at(28, 19, temperature=10)]
+    periods = [
+        _at(28, 13, temperature=16, weather_condition="sunny"),
+        _at(28, 19, temperature=10),
+    ]
     hourly = interpolate_hourly(periods)
     return ForecastData(settlement="X", current=hourly[2], periods=periods, hourly=hourly)
-
-
-def test_current_period_without_any_rows():
-    """Test current period without any rows."""
-    assert current_period([], [], datetime(2026, 10, 28, 16, tzinfo=HUNGARY_TZ)) is None
 
 
 def test_hourly_forecast_starts_at_the_current_hour():
@@ -192,9 +189,9 @@ def test_hourly_forecast_starts_at_the_current_hour():
     assert hourly[0]["datetime"].startswith("2026-10-28T15:00")
     assert len(hourly) == 5  # 15:00 to 19:00
 
-    # Without a current hour, every hour is listed
+    # Without a current hour the entity is unavailable, with no forecast
     data.current = None
-    assert len(entity._async_forecast_hourly()) == 7
+    assert entity._async_forecast_hourly() is None
 
 
 def _download(*rows, now):
@@ -213,7 +210,7 @@ def test_dropped_row_is_kept_from_the_previous_download():
         now=datetime(2026, 10, 28, 16, 58, tzinfo=HUNGARY_TZ),
     )
     new = _download(_at(28, 19, temperature=10), _at(29, 1, temperature=8), now=now)
-    assert new.current.forecast_time.hour == 19  # the bug: no 17:00 hour
+    assert new.current is None  # without the dropped row: no 17:00 hour
 
     data = keep_dropped_row(new, previous, now)
 
@@ -328,6 +325,8 @@ async def test_coordinator_keeps_the_dropped_row():
     coordinator.hass = MagicMock()
     coordinator.settlement = MagicMock()
     coordinator._store = MagicMock(async_save=AsyncMock())
+    coordinator._saved = None
+    coordinator.last_update_success = True
     coordinator.data = _download(
         _at(28, 13, temperature=16), _at(28, 19, temperature=10), now=now
     )
@@ -466,6 +465,8 @@ async def test_coordinator_continues_from_the_recorded_values():
     coordinator.hass = MagicMock()
     coordinator.settlement = MagicMock()
     coordinator._store = MagicMock(async_save=AsyncMock())
+    coordinator._saved = None
+    coordinator.last_update_success = True
     coordinator.data = _night_before()
     new = _download(
         _at(28, 1, temperature=6.0), _at(28, 7, temperature=0.0), now=AFTER

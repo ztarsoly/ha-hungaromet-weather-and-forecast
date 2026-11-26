@@ -257,7 +257,6 @@ def _coordinator():
     coordinator.district = None
     coordinator.hass = MagicMock()
     coordinator.hass.async_add_executor_job = AsyncMock(return_value="903")
-    coordinator._store = MagicMock(async_save=AsyncMock())
     return coordinator
 
 
@@ -276,67 +275,6 @@ async def test_coordinator_finds_the_district_once():
         find_district, 47.543, 21.648
     )
     fetch.assert_awaited_with(session.return_value, "903")
-
-
-SAVED = {
-    "code": "725",
-    "alerts": {"thunderstorm": "yellow"},
-    "warnings": {"wind_gust": "orange"},
-}
-
-
-async def test_each_download_is_saved():
-    """Test each download is saved, with the settlement."""
-    coordinator = _coordinator()
-    data = Warnings(alerts={"thunderstorm": "yellow"}, warnings={"wind_gust": "orange"})
-    with (
-        patch.object(warning, "async_get_clientsession"),
-        patch.object(warning, "fetch_warnings", AsyncMock(return_value=data)),
-    ):
-        await coordinator._async_update_data()
-
-    coordinator._store.async_save.assert_awaited_once_with(SAVED)
-
-
-async def _load(stored):
-    coordinator = _coordinator()
-    coordinator.data = None
-    coordinator._store.async_load = AsyncMock(return_value=stored)
-    await coordinator.async_load_stored()
-    return coordinator.data
-
-
-@pytest.mark.parametrize(
-    "stored",
-    [
-        SAVED,
-        # A day old, with the keys earlier builds also saved
-        {**SAVED, "day": "2026-11-22", "fetched": "2026-11-22T10:00:00+01:00"},
-    ],
-)
-async def test_load_saved_levels(stored):
-    """Test the levels saved for the settlement are loaded, however old."""
-    assert await _load(stored) == Warnings(
-        alerts={"thunderstorm": "yellow"}, warnings={"wind_gust": "orange"}
-    )
-
-
-@pytest.mark.parametrize(
-    "stored",
-    [
-        None,  # nothing saved yet
-        {**SAVED, "code": "2209"},  # another settlement (e.g. after Configure)
-    ],
-)
-async def test_load_ignores_missing_and_other_settlements(stored):
-    """Test load ignores missing levels and other settlements."""
-    assert await _load(stored) is None
-
-
-async def test_load_ignores_unreadable_levels(caplog):
-    """Test load ignores unreadable levels."""
-    assert await _load({**SAVED, "alerts": None}) is None
-    assert "Ignoring the saved warnings" in caplog.text
 
 
 def test_store_is_per_entry():
@@ -366,12 +304,8 @@ def test_coordinator_init():
     with (
         patch.object(warning.ScheduledCoordinator, "__init__", return_value=None) as init,
         patch.object(warning, "RetryingSchedule") as cls,
-        patch.object(warning, "warning_store") as store,
     ):
         coordinator = warning.WarningCoordinator("hass", entry, DEBRECEN)
-
-    store.assert_called_once_with("hass", "e1")
-    assert coordinator._store is store.return_value
 
     assert init.call_args.kwargs["update_interval"] is None
     assert init.call_args.kwargs["config_entry"] is entry
@@ -393,12 +327,17 @@ async def test_setup_schedules_and_registers_the_update():
     """Test setup schedules and registers the update."""
     entry = MagicMock(entry_id="e1")
     hass = MagicMock(data={})
-    coordinator = MagicMock(async_load_stored=AsyncMock())
-    with patch.object(warning, "WarningCoordinator", return_value=coordinator) as cls:
+    coordinator = MagicMock()
+    saved = MagicMock(async_remove=AsyncMock())
+    with (
+        patch.object(warning, "WarningCoordinator", return_value=coordinator) as cls,
+        patch.object(warning, "warning_store", return_value=saved) as store,
+    ):
         assert await warning.async_setup_warnings(hass, entry, DEBRECEN) is coordinator
 
-    # The levels saved before a restart are loaded first
-    coordinator.async_load_stored.assert_awaited_once()
+    # The file earlier versions saved is deleted
+    store.assert_called_once_with(hass, "e1")
+    saved.async_remove.assert_awaited_once()
 
     cls.assert_called_once_with(hass, entry, DEBRECEN)
     unloads = [c.args[0] for c in entry.async_on_unload.call_args_list]
@@ -486,6 +425,14 @@ def test_sensors_before_the_first_download():
         assert not sensor.available
         assert sensor.native_value is None
         assert sensor.extra_state_attributes is None
+
+
+def test_sensors_are_unavailable_after_a_failed_download():
+    """Test sensors are unavailable after a failed download, with older levels."""
+    sensors = _sensors(Warnings(alerts={}, warnings={}))
+    assert all(sensor.available for sensor in sensors)
+    sensors[0].coordinator.last_update_success = False
+    assert not any(sensor.available for sensor in sensors)
 
 
 def test_sensor_descriptions():

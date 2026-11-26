@@ -7,14 +7,48 @@ from functools import partial
 from typing import TypeVar
 
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later, async_track_utc_time_change
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
+from .const import DOMAIN
+from .failures import FailureLog
+
 _LOGGER = logging.getLogger(__name__)
 
 _DataT = TypeVar("_DataT")
+
+# How often a download that failed after a restart or reload is tried again,
+# besides its schedule, until it works
+STARTUP_RETRY_DELAY = timedelta(minutes=1)
+
+
+def async_retry_every_minute(
+    hass: HomeAssistant, attempt: Callable[[], Awaitable[bool]]
+) -> Callable[[], None]:
+    """Run `attempt` every minute until it returns True.
+
+    The first run is a minute from now. Returns a function that stops it.
+    """
+    unsub: Callable[[], None] | None = None
+    stopped = False
+
+    async def run(_now) -> None:
+        nonlocal unsub
+        unsub = None
+        if not await attempt() and not stopped:
+            unsub = async_call_later(hass, STARTUP_RETRY_DELAY, run)
+
+    unsub = async_call_later(hass, STARTUP_RETRY_DELAY, run)
+
+    def stop() -> None:
+        nonlocal stopped
+        stopped = True
+        if unsub is not None:
+            unsub()
+
+    return stop
 
 
 class RetryingSchedule:
@@ -97,8 +131,53 @@ class RetryingSchedule:
         )
 
 
+class _DebugLogger(logging.LoggerAdapter):
+    """Move every message of a logger to the debug level.
+
+    For the coordinator's own messages: its failures and recoveries are
+    logged as warnings by the coordinator's FailureLog instead.
+    """
+
+    def log(self, level, msg, *args, **kwargs):
+        super().log(logging.DEBUG, msg, *args, **kwargs)
+
+
 class ScheduledCoordinator(DataUpdateCoordinator[_DataT]):
     """A coordinator refreshed by a RetryingSchedule and the update service."""
+
+    def __init__(
+        self, hass: HomeAssistant, logger: logging.Logger, *, name: str, **kwargs
+    ) -> None:
+        super().__init__(hass, _DebugLogger(logger, {}), name=name, **kwargs)
+        label = name.replace(DOMAIN, "HungaroMet")
+        self._failure_log = FailureLog(logger, f"{label} download")
+        # Whether a download has worked since the setup
+        self._downloaded = False
+
+    @callback
+    def _async_refresh_finished(self) -> None:
+        """Warn about the first failed download, and about the recovery."""
+        if self.last_update_success:
+            self._downloaded = True
+            self._failure_log.succeeded()
+        else:
+            self._failure_log.failed(self.last_exception)
+
+    @callback
+    def async_retry_after_restart(self) -> Callable[[], None]:
+        """Until the first download works, also try it every minute.
+
+        Returns a function that stops the retries.
+        """
+        if self._downloaded:
+            return lambda: None
+
+        async def attempt() -> bool:
+            if not self._downloaded and self._listeners:
+                await self.async_refresh()
+            return self._downloaded or not self._listeners
+
+        return async_retry_every_minute(self.hass, attempt)
 
     async def _async_scheduled_download(self, _scheduled_for=None) -> bool:
         """Download the data; return False to have it retried.

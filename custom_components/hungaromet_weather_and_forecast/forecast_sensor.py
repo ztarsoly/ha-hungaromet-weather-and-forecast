@@ -118,8 +118,11 @@ class ForecastSensor(CoordinatorEntity[ForecastCoordinator], SensorEntity):
 
     @property
     def available(self) -> bool:
-        """Keep showing the last forecast when a download fails."""
-        return self.coordinator.data is not None
+        """Be unavailable without a value.
+
+        A failed download leaves the last forecast to take the value from.
+        """
+        return self.native_value is not None
 
     @property
     def native_value(self):

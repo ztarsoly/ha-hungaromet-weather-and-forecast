@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 
 from .const import DEFAULT_DISTANCE_KM
 from .device_classes import device_class_for
+from .failures import FailureLog
 from .scope import EntryScope, device_info, scoped_id
 from .weather_data import (
     WIND_DIRECTIONS,
@@ -80,6 +81,16 @@ class StationQuery:
     # None means Home Assistant's home location
     location: tuple[float, float] | None = None
     scope: EntryScope | None = None
+    # Each feed's FailureLog, by the feed's key
+    logs: dict = field(default_factory=dict, compare=False, repr=False)
+
+    def failure_log(self, feed: Feed) -> FailureLog:
+        """Return what logs this query's failed downloads of a feed."""
+        if feed.key not in self.logs:
+            self.logs[feed.key] = FailureLog(
+                _LOGGER, f"HungaroMet {feed.model.lower()} download"
+            )
+        return self.logs[feed.key]
 
 
 _m = Measurement
@@ -186,6 +197,24 @@ def reading(data: dict, key: str):
     return value if value is not None else data.get(f"average_{key}")
 
 
+async def async_download_feed(
+    hass, feed: Feed, query: StationQuery
+) -> tuple[dict, list[dict]] | None:
+    """Download a feed; return its values and stations, or None if it fails."""
+    log = query.failure_log(feed)
+    try:
+        result = await hass.async_add_executor_job(
+            feed.process, hass, query.distance_km, query.location
+        )
+    except Exception as err:  # pylint: disable=broad-exception-caught
+        # A failed download (network, missing file, unexpected CSV) must not
+        # stop the schedule; it is retried
+        log.failed(err)
+        return None
+    log.succeeded()
+    return result
+
+
 class FeedSensor(SensorEntity):
     """A sensor of one feed's device, updated by the integration's schedules."""
 
@@ -198,6 +227,7 @@ class FeedSensor(SensorEntity):
         self._feed = feed
         self._query = query
         self._added = False
+        self._download_failed = False
 
     @property
     def feed(self) -> Feed:
@@ -215,6 +245,11 @@ class FeedSensor(SensorEntity):
             self._query.scope, self._feed.device_id, self._feed.key, self._feed.model
         )
 
+    @property
+    def available(self) -> bool:
+        """Return whether the last download of the sensor's feed worked."""
+        return not self._download_failed
+
     async def async_added_to_hass(self) -> None:
         self._added = True
 
@@ -225,26 +260,20 @@ class FeedSensor(SensorEntity):
         """Download the feed and show it (Home Assistant's update_entity)."""
         if not self._added:
             return
-        data, stations = await self.hass.async_add_executor_job(
-            self._feed.process, self.hass, self._query.distance_km, self._query.location
-        )
-        self.show(data, stations)
+        result = await async_download_feed(self.hass, self._feed, self._query)
+        if result is None:
+            self.mark_download_failed()
+        else:
+            self.show(*result)
         self.async_write_ha_state()
 
-    def wait_for_download(self) -> None:
-        """Make the sensor unavailable until its feed is downloaded.
-
-        For a feed whose first download failed after a restart or reload:
-        nothing was downloaded yet, so there is no value to show.
-        """
-        self._attr_available = False
+    def mark_download_failed(self) -> None:
+        """Make the sensor unavailable until its feed is downloaded again."""
+        self._download_failed = True
 
     def show(self, data: dict, stations: list[dict]) -> None:
-        """Take this sensor's value from a download of its feed.
-
-        The value is kept until the next successful download, however old.
-        """
-        self._attr_available = True
+        """Take this sensor's value from a download of its feed."""
+        self._download_failed = False
         self._show(data, stations)
 
     def _show(self, data: dict, stations: list[dict]) -> None:
@@ -260,6 +289,9 @@ class StationSensor(FeedSensor):
         super().__init__(hass, feed, query)
         self._measurement = measurement
         self._value = value
+        self._time_log = FailureLog(
+            _LOGGER, f"Reading the {feed.key} measurement time"
+        )
 
     @property
     def _base_key(self) -> str:
@@ -297,6 +329,11 @@ class StationSensor(FeedSensor):
         return 1 if self._measurement.unit else None
 
     @property
+    def available(self) -> bool:
+        """Be unavailable, not unknown, without a value."""
+        return super().available and self.native_value is not None
+
+    @property
     def native_value(self):
         if self._base_key == "time" and self._value:
             return self._time()
@@ -306,19 +343,19 @@ class StationSensor(FeedSensor):
 
     def _time(self) -> date | datetime | None:
         """Return the measurement time: a date (daily) or a UTC time."""
+        parse = (
+            date if self._feed.time_class == SensorDeviceClass.DATE else datetime
+        ).fromisoformat
         try:
-            if self._feed.time_class == SensorDeviceClass.DATE:
-                return date.fromisoformat(self._value)
-            return datetime.fromisoformat(self._value)
+            time = parse(self._value)
         except ValueError as err:
-            _LOGGER.warning("Failed to read the %s measurement time: %s", self._feed.key, err)
+            self._time_log.failed(err)
             return None
+        self._time_log.succeeded()
+        return time
 
     def _show(self, data: dict, stations: list[dict]) -> None:
-        # A value missing from this download keeps the last one
-        value = reading(data, self._measurement.key)
-        if value is not None:
-            self._value = value
+        self._value = reading(data, self._measurement.key)
 
 
 class StationsSensor(FeedSensor):

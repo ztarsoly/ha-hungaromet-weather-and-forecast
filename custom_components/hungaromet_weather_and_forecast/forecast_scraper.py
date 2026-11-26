@@ -410,7 +410,7 @@ def _derive(data: ForecastData, now: datetime) -> None:
     data.hourly = interpolate_hourly(data.periods)
     if data.location:
         _follow_the_sun(data.hourly, data.location)
-    data.current = current_period(data.hourly, data.periods, now)
+    data.current = find_current_hour(data.hourly, now)
     data.daily = aggregate_daily(data.periods, now)
 
 
@@ -470,7 +470,7 @@ def forecast_from_dict(
         data.hourly = [period(p) for p in hourly]
         if location:
             _follow_the_sun(data.hourly, location)
-        data.current = current_period(data.hourly, data.periods, now)
+        data.current = find_current_hour(data.hourly, now)
     return data
 
 
@@ -551,7 +551,7 @@ def continue_from_recorded(
             hour = _towards(hour, anchor, target, step, steps)
         hourly.append(hour)
     data.hourly = hourly
-    data.current = current_period(hourly, data.periods, now)
+    data.current = find_current_hour(hourly, now)
     return data
 
 
@@ -576,22 +576,6 @@ def _towards(
         )
         values["wind_direction"] = bearing_to_direction(values["wind_bearing"])
     return replace(hour, **values)
-
-
-def current_period(hourly, periods, now: datetime) -> ForecastPeriod | None:
-    """Return the current hour, or met.hu's nearest row outside the hourly range."""
-    return find_current_hour(hourly, now) or (
-        find_current(periods, now) if periods else None
-    )
-
-
-def find_current(periods: list[ForecastPeriod], now: datetime):
-    """Return the first row at most 3 hours old, or the last row."""
-    since = now - timedelta(hours=3)
-    return next(
-        (p for p in periods if p.forecast_time and p.forecast_time >= since),
-        periods[-1],
-    )
 
 
 def _lerp(start: float | None, end: float | None, fraction: float):

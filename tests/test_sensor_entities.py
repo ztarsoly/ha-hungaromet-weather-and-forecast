@@ -139,7 +139,11 @@ def test_measurement_times(feed, value, expected, caplog):
     assert sensor.native_value == expected
     sensor._value = "bad"
     assert sensor.native_value is None
-    assert f"Failed to read the {feed} measurement time" in caplog.text
+    assert not sensor.available
+    assert caplog.text.count(f"Reading the {feed} measurement time failed") == 1
+    sensor._value = value
+    assert sensor.native_value == expected
+    assert f"Reading the {feed} measurement time works again" in caplog.text
 
 
 def test_prevailing_wind_direction_is_an_enum():
@@ -303,6 +307,7 @@ async def test_radar_image_schedules_and_unsubscribes(monkeypatch):
         async_create_task=lambda coro, name: tasks.append((coro, name)),
     )
     image = HungarometRadarImage(hass)
+    image.async_write_ha_state = MagicMock()
 
     await image.async_added_to_hass()
     assert captured["kwargs"] == {"minute": "/5", "second": 59}

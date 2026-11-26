@@ -17,6 +17,7 @@ from homeassistant.components.image import ImageEntity
 from homeassistant.util import dt as dt_util
 from PIL import Image
 
+from .failures import FailureLog
 from .scheduler import RetryingSchedule
 from .updaters import async_register_updater
 
@@ -75,7 +76,7 @@ def download_image(url):
         image.load()
         return image
     except requests.RequestException as err:
-        _LOGGER.error("Failed to download %s: %s", url, err)
+        _LOGGER.debug("Failed to download %s: %s", url, err)
         return None
 
 
@@ -100,9 +101,9 @@ class RadarFrames:
     def update(self, urls: list[str]) -> tuple[str | None, bytes | None]:
         """Bring the frames up to the listed newest ones (oldest first).
 
-        Return the newest frame's URL (None unless every listed frame is here)
-        and the new animation's bytes (None when there is no frame at all; the
-        last animation is kept then).
+        Return the newest frame's URL and the new animation's bytes; both are
+        None unless every listed frame is here. Frames already downloaded are
+        kept for the next try.
         """
         with self._lock:
             for url in urls:
@@ -110,16 +111,13 @@ class RadarFrames:
                     self._images[url] = image
             # Only the listed frames stay, so the oldest one drops out
             self._images = {url: self._images[url] for url in urls if url in self._images}
-            if not self._images:
-                _LOGGER.error("No radar frames downloaded. GIF not updated.")
+            if len(self._images) != len(urls):
                 return None, None
             gif = create_gif(list(self._images.values()))
-            if gif is not None:
-                self._gif = gif
-            # A frame that failed to download means the newest image may be missing;
-            # it is downloaded again at the next try
-            complete = len(self._images) == len(urls)
-            return (urls[-1] if complete else None), gif
+            if gif is None:
+                return None, None
+            self._gif = gif
+            return urls[-1], gif
 
 
 def create_gif(images, duration=FRAME_DURATION_MS, end_delay=END_DELAY_MS):
@@ -129,7 +127,7 @@ def create_gif(images, duration=FRAME_DURATION_MS, end_delay=END_DELAY_MS):
     """
     try:
         if not images:
-            _LOGGER.error("No images to create GIF.")
+            _LOGGER.debug("No images to create GIF.")
             return None
         durations = [duration] * (len(images) - 1) + [end_delay]
         gif = BytesIO()
@@ -144,7 +142,7 @@ def create_gif(images, duration=FRAME_DURATION_MS, end_delay=END_DELAY_MS):
         _LOGGER.debug("GIF built (frames: %s, end delay: %s ms)", len(images), end_delay)
         return gif.getvalue()
     except (OSError, ValueError) as err:  # pragma: no cover - defensive logging
-        _LOGGER.error("Error creating GIF: %s", err)
+        _LOGGER.debug("Error creating GIF: %s", err)
         return None
 
 
@@ -171,7 +169,7 @@ def _frame_is_fresh(frame_url, scheduled_for):
     return frame >= run_slot - timedelta(minutes=5)
 
 
-class RadarImage(ImageEntity):
+class RadarImage(ImageEntity):  # pylint: disable=too-many-instance-attributes
     """An animated radar GIF, rebuilt on its own schedule.
 
     Subclasses give the name, the device and where the newest frames are listed.
@@ -192,13 +190,17 @@ class RadarImage(ImageEntity):
         # The animation is kept in memory only; it is built when the entity is
         # added, and the entity is unavailable until then
         self._frames = RadarFrames()
+        self._download_failed = False
+        # Why the last rebuild brought nothing, for the log
+        self._problem = ""
+        self._failure_log = FailureLog(_LOGGER, f"{self._label} download")
         # What stops the schedule and the update service's rebuilds
         self._unsubscribe: list = []
 
     @property
     def available(self) -> bool:
-        """Return True once an animation has been built."""
-        return self._frames.gif is not None
+        """Return True if the last rebuild brought a complete animation."""
+        return not self._download_failed and self._frames.gif is not None
 
     async def async_added_to_hass(self):
         self._added = True
@@ -241,30 +243,41 @@ class RadarImage(ImageEntity):
     def _rebuild_gif(self) -> tuple[str | None, bytes | None]:
         """Rebuild the GIF (in the executor).
 
-        Return the newest frame's URL (None unless every frame arrived) and the
-        GIF's bytes (None when nothing could be built).
+        Return the newest frame's URL and the GIF's bytes; both are None unless
+        every listed frame arrived.
         """
         try:
             urls = self._list_frames()
         except requests.RequestException as err:
-            _LOGGER.error("Network error listing %s frames: %s", self._label, err)
+            self._problem = f"the frames could not be listed: {err}"
             return None, None
         if not urls:
-            _LOGGER.error("No %s frames listed. GIF not updated.", self._label)
+            self._problem = "no frames are listed"
             return None, None
+        self._problem = "not every frame could be downloaded and animated"
         return self._frames.update(urls)
 
     async def async_update_data(self):
         """Rebuild the GIF and return its newest frame's URL, or None."""
         if not self._added:
             return None
-        frame_url, gif = await self.hass.async_add_executor_job(self._rebuild_gif)
-        if gif is not None:
-            # Shown even with a frame missing; the state only changes once the
-            # newest frame is in, which also tells the frontend to reload it
-            if frame_url is not None:
-                self._attr_image_last_updated = dt_util.utcnow()
-            self.async_write_ha_state()
+        try:
+            frame_url, gif = await self.hass.async_add_executor_job(
+                self._rebuild_gif
+            )
+        except Exception as err:  # pylint: disable=broad-exception-caught
+            # For example a broken image; it must not stop the schedule
+            self._problem = str(err)
+            frame_url, gif = None, None
+        self._download_failed = gif is None
+        if gif is None:
+            self._failure_log.failed(self._problem)
+            frame_url = None
+        else:
+            self._failure_log.succeeded()
+            # The state change also tells the frontend to reload the image
+            self._attr_image_last_updated = dt_util.utcnow()
+        self.async_write_ha_state()
         return frame_url
 
     async def async_update(self):
@@ -272,8 +285,8 @@ class RadarImage(ImageEntity):
         await self.async_update_data()
 
     async def async_image(self):
-        return self._frames.gif
+        return self.image()
 
     def image(self):
-        """Return the most recent radar image bytes."""
-        return self._frames.gif
+        """Return the radar animation's bytes, or None while unavailable."""
+        return self._frames.gif if self.available else None

@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import custom_components.hungaromet_weather_and_forecast as integration
-from custom_components.hungaromet_weather_and_forecast import forecast
+from custom_components.hungaromet_weather_and_forecast import forecast, scheduler
 from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     HUNGARY_TZ,
     ForecastData,
@@ -107,6 +107,8 @@ def _coordinator(stored):
     coordinator = object.__new__(forecast.ForecastCoordinator)
     coordinator.settlement = DEBRECEN
     coordinator.data = None
+    coordinator._saved = None
+    coordinator.last_update_success = True
     coordinator._store = MagicMock(async_load=AsyncMock(return_value=stored))
     return coordinator
 
@@ -120,10 +122,12 @@ async def test_load_stored_forecast(key):
     with patch.object(forecast.dt_util, "now", return_value=NOW):
         await coordinator.async_load_stored()
 
-    assert coordinator.data.settlement == "Debrecen"
-    assert coordinator.data.current.forecast_time.hour == 17
+    # Never shown by itself: only used to fill the first download
+    assert coordinator.data is None
+    assert coordinator._saved.settlement == "Debrecen"
+    assert coordinator._saved.current.forecast_time.hour == 17
     # The 13:00 row is sunny, but the sun has set by 17:00 at the settlement
-    assert coordinator.data.current.weather_condition == "clear-night"
+    assert coordinator._saved.current.weather_condition == "clear-night"
 
 
 @pytest.mark.parametrize(
@@ -137,14 +141,14 @@ async def test_load_ignores_missing_or_other_settlements(stored):
     """Test load ignores missing or other settlements."""
     coordinator = _coordinator(stored)
     await coordinator.async_load_stored()
-    assert coordinator.data is None
+    assert coordinator._saved is None
 
 
 async def test_load_ignores_unreadable_forecast(caplog):
     """Test load ignores unreadable forecast."""
     coordinator = _coordinator({"code": "725", "forecast": {"periods": []}})
     await coordinator.async_load_stored()
-    assert coordinator.data is None
+    assert coordinator._saved is None
     assert "Ignoring the saved forecast" in caplog.text
 
 
@@ -164,52 +168,148 @@ async def test_each_download_is_saved():
     )
 
 
-def _failing_coordinator(data):
-    """A coordinator whose downloads fail, showing `data`."""
+def _later_download():
+    """A new table without the rows before 19:00."""
+    new = ForecastData(
+        settlement="Debrecen", periods=[_at(19, temperature=10), _at(1, 29, temperature=8)]
+    )
+    _derive(new, NOW)
+    return new
+
+
+async def _download(coordinator):
+    coordinator.hass = MagicMock()
+    coordinator._store.async_save = AsyncMock()
+    with (
+        patch.object(forecast, "async_get_clientsession"),
+        patch.object(forecast, "fetch_forecast", AsyncMock(return_value=_later_download())),
+        patch.object(forecast.dt_util, "now", return_value=NOW),
+        patch.object(forecast, "continue_from_recorded", side_effect=lambda d, *_: d) as go_on,
+    ):
+        return await coordinator._async_update_data(), go_on
+
+
+async def test_the_saved_forecast_fills_the_first_download():
+    """Test saved rows fill the first download, without changing its values."""
     coordinator = _coordinator(None)
-    coordinator.data = data
+    coordinator._saved = _forecast()
+
+    data, go_on = await _download(coordinator)
+
+    assert data.current.forecast_time.hour == 17
+    # The hours only continue from a download, never from saved values
+    assert go_on.call_args.args[1] is None
+
+
+async def test_without_the_current_hour_there_is_no_current_forecast():
+    """Test no other row stands in for a current hour that is missing."""
+    data, _ = await _download(_coordinator(None))
+
+    assert data.current is None
+
+
+@pytest.mark.parametrize("success", [True, False])
+async def test_old_values_only_fill_a_download_after_a_failure(success):
+    """Test the hours continue from the last download only if it worked."""
+    coordinator = _coordinator(None)
+    coordinator.data = _forecast()
+    coordinator.last_update_success = success
+
+    data, go_on = await _download(coordinator)
+
+    # The missing rows come back either way
+    assert data.current.forecast_time.hour == 17
+    assert go_on.called is success
+
+
+def _failing(saved):
+    """A real coordinator whose downloads fail, with `saved` loaded."""
+    hass = MagicMock()
+    hass.is_stopping = False
+    entry = MagicMock(entry_id="e1", pref_disable_polling=False)
+    with patch.object(forecast, "forecast_store"):
+        coordinator = forecast.ForecastCoordinator(hass, entry, DEBRECEN)
+    coordinator._saved = saved
     coordinator._listeners = {1: (MagicMock(), None)}
-    coordinator.async_refresh = AsyncMock()
-    coordinator.last_update_success = False
+    coordinator._schedule_refresh = MagicMock()
     coordinator.async_update_listeners = MagicMock()
     return coordinator
 
 
-async def test_a_failed_download_moves_on_to_the_current_hour():
-    """Test a failed download moves on to the current hour of the saved forecast.
+async def _fail(coordinator, now):
+    with (
+        patch.object(forecast, "async_get_clientsession"),
+        patch.object(forecast, "fetch_forecast", AsyncMock(side_effect=TimeoutError())),
+        patch.object(forecast.dt_util, "now", return_value=now),
+    ):
+        await coordinator.async_refresh()
 
-    Without it the sensors would stay on the hour of the last download.
-    """
-    coordinator = _failing_coordinator(_forecast())
+
+async def test_failed_downloads_follow_the_saved_forecast_hour_by_hour():
+    """Test the saved forecast moves with the hours while downloads fail."""
+    coordinator = _failing(_forecast())  # saved at 17:22
+
+    await _fail(coordinator, NOW)
+
+    assert coordinator.last_update_success is False
     assert coordinator.data.current.forecast_time.hour == 17
-    later = datetime(2026, 10, 28, 18, 0, 59, tzinfo=HUNGARY_TZ)
 
-    with patch.object(forecast.dt_util, "now", return_value=later):
-        assert await coordinator._async_scheduled_download(None) is False
+    coordinator.async_update_listeners.reset_mock()
+    await _fail(coordinator, datetime(2026, 10, 28, 18, 0, 59, tzinfo=HUNGARY_TZ))
 
     current = coordinator.data.current
     assert (current.forecast_time.hour, current.temperature) == (18, 11.0)
+    # The entities hear about a repeated failure too
+    coordinator.async_update_listeners.assert_called()
+
+
+async def test_the_followed_forecast_ends_with_its_last_hour():
+    """Test there is no current hour or past day once the saved forecast is over."""
+    coordinator = _failing(_forecast())
+
+    await _fail(coordinator, datetime(2026, 10, 29, 9, tzinfo=HUNGARY_TZ))
+
+    assert coordinator.data.current is None
+    assert not coordinator.data.daily
+
+
+async def test_a_failed_download_without_a_forecast_shows_nothing():
+    """Test there is nothing to follow without a downloaded or saved forecast."""
+    coordinator = _failing(None)
+
+    await _fail(coordinator, NOW)
+
+    assert coordinator.data is None
+    # Only the coordinator's own news of the first failure
     coordinator.async_update_listeners.assert_called_once()
 
 
-async def test_a_working_download_does_not_move_the_hour_itself():
-    """Test a working download leaves the hour to the downloaded forecast."""
-    coordinator = _failing_coordinator(_forecast())
-    coordinator.last_update_success = True
+async def test_a_working_download_is_shown_as_it_is():
+    """Test a working download replaces the saved forecast."""
+    coordinator = _failing(_forecast())
+    coordinator._store.async_save = AsyncMock()
+    new = _later_download()
+    with (
+        patch.object(forecast, "async_get_clientsession"),
+        patch.object(forecast, "fetch_forecast", AsyncMock(return_value=new)),
+        patch.object(forecast.dt_util, "now", return_value=NOW),
+    ):
+        await coordinator.async_refresh()
 
-    assert await coordinator._async_scheduled_download(None) is True
+    assert coordinator.last_update_success is True
+    assert coordinator.data is new
+    coordinator.async_update_listeners.assert_called_once()
 
-    coordinator.async_update_listeners.assert_not_called()
 
+async def test_the_saved_forecast_does_not_stop_the_retries():
+    """Test the one-minute retries go on while only the saved forecast shows."""
+    coordinator = _failing(_forecast())
+    await _fail(coordinator, NOW)
 
-async def test_a_failed_download_without_a_forecast_changes_nothing():
-    """Test a failed download without a forecast changes nothing."""
-    coordinator = _failing_coordinator(None)
+    with patch.object(scheduler, "async_call_later") as call_later:
+        coordinator.async_retry_after_restart()
 
-    assert await coordinator._async_scheduled_download(None) is False
-
-    assert coordinator.data is None
-    coordinator.async_update_listeners.assert_not_called()
+    call_later.assert_called_once()
 
 
 def test_store_is_per_entry():

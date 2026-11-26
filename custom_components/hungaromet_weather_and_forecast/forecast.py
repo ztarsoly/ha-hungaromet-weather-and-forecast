@@ -6,7 +6,7 @@ from datetime import timedelta
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import UpdateFailed
@@ -23,9 +23,10 @@ from .forecast_scraper import (
     FORECAST_PAGE_URL,
     ForecastData,
     Settlement,
+    aggregate_daily,
     continue_from_recorded,
-    current_period,
     fetch_forecast,
+    find_current_hour,
     forecast_from_dict,
     forecast_to_dict,
     keep_dropped_row,
@@ -127,6 +128,8 @@ class ForecastCoordinator(ScheduledCoordinator[ForecastData]):
         # The settlement's alerts and warnings, set up with the forecast
         self.warnings: WarningCoordinator | None = None
         self._store = forecast_store(hass, entry.entry_id)
+        # The forecast saved before a restart; shown only while downloads fail
+        self._saved: ForecastData | None = None
         self.schedule = RetryingSchedule(
             hass,
             "forecast",
@@ -137,17 +140,17 @@ class ForecastCoordinator(ScheduledCoordinator[ForecastData]):
         )
 
     async def async_load_stored(self) -> None:
-        """Start from the forecast saved before a restart, if it is still ours.
+        """Load the forecast saved before a restart, if it is still ours.
 
-        It shows the last forecast until the first download, and gives that
-        download the row met.hu may have dropped meanwhile.
+        It stands in while the downloads fail, and gives the first download
+        the rows met.hu has dropped meanwhile.
         """
         stored = await self._store.async_load()
         # Saved as "kod" up to 1.3.4
         if not stored or stored.get("code", stored.get("kod")) != self.settlement.kod:
             return
         try:
-            self.data = forecast_from_dict(
+            self._saved = forecast_from_dict(
                 stored["forecast"],
                 dt_util.now(),
                 (self.settlement.lat, self.settlement.lon),
@@ -155,20 +158,25 @@ class ForecastCoordinator(ScheduledCoordinator[ForecastData]):
         except (KeyError, TypeError, ValueError) as err:
             _LOGGER.warning("Ignoring the saved forecast, which is unreadable: %s", err)
 
-    async def _async_scheduled_download(self, _scheduled_for=None) -> bool:
-        """Download the forecast; if that fails, move on to the current hour.
+    @callback
+    def _async_refresh_finished(self) -> None:
+        """After a failed download, go on with the forecast of the current hour.
 
-        The saved forecast already holds every hour, so while met.hu cannot be
-        reached the sensors follow it hour by hour instead of staying on the
-        hour of the last download. The next download continues from the hours
-        shown (see continue_from_recorded).
+        The last forecast (after a restart the saved one) holds every hour, so
+        the entities follow it while met.hu cannot be reached. They become
+        unavailable once it has no current hour.
         """
-        fresh = await super()._async_scheduled_download(_scheduled_for)
-        if not fresh and self.data is not None:
-            data = self.data
-            data.current = current_period(data.hourly, data.periods, dt_util.now())
-            self.async_update_listeners()
-        return fresh
+        super()._async_refresh_finished()
+        if self.last_update_success:
+            return
+        self.data = self.data or self._saved
+        if self.data is None:
+            return
+        now = dt_util.now()
+        self.data.current = find_current_hour(self.data.hourly, now)
+        self.data.daily = aggregate_daily(self.data.periods, now)
+        # The coordinator itself only tells the entities about the first failure
+        self.async_update_listeners()
 
     async def _async_update_data(self) -> ForecastData:
         session = async_get_clientsession(self.hass)
@@ -179,8 +187,11 @@ class ForecastCoordinator(ScheduledCoordinator[ForecastData]):
                 f"met.hu forecast for {self.settlement.name} failed: {err}"
             ) from err
         now = dt_util.now()
-        data = keep_dropped_row(data, self.data, now)
-        data = continue_from_recorded(data, self.data, now)
+        data = keep_dropped_row(data, self.data or self._saved, now)
+        # The hours continue from those shown only while the downloads work:
+        # saved or old values only fill what a download lacks
+        if self.last_update_success:
+            data = continue_from_recorded(data, self.data, now)
         await self._store.async_save(
             {"code": self.settlement.kod, "forecast": forecast_to_dict(data)}
         )

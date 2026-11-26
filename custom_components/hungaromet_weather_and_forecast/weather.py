@@ -77,8 +77,11 @@ class HungarometForecastWeather(  # pylint: disable=too-many-ancestors,abstract-
 
     @property
     def available(self) -> bool:
-        """Keep showing the last forecast when a download fails."""
-        return self.coordinator.data is not None
+        """Be unavailable without a condition.
+
+        A failed download leaves the last forecast to take it from.
+        """
+        return self.condition is not None
 
     @property
     def _current(self) -> ForecastPeriod | None:
@@ -124,18 +127,19 @@ class HungarometForecastWeather(  # pylint: disable=too-many-ancestors,abstract-
 
     @callback
     def _async_forecast_daily(self) -> list[Forecast] | None:
-        data = self.coordinator.data
-        return [_forecast(p, daily=True) for p in data.daily] if data else None
+        if not self.available:
+            return None
+        return [_forecast(p, daily=True) for p in self.coordinator.data.daily]
 
     @callback
     def _async_forecast_hourly(self) -> list[Forecast] | None:
         """One entry per hour from the current hour on, interpolated between rows."""
-        data = self.coordinator.data
-        if data is None:
+        if not self.available:
             return None
-        start = data.current.forecast_time if data.current else None
+        data = self.coordinator.data
+        start = data.current.forecast_time
         return [
             _forecast(p, daily=False)
-            for p in data.hourly or data.periods
-            if start is None or p.forecast_time >= start
+            for p in data.hourly
+            if p.forecast_time >= start
         ]

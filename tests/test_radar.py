@@ -188,21 +188,34 @@ def test_frames_with_nothing_new_download_nothing():
 
 
 def test_frames_retry_a_failed_download():
-    """A missing frame: the animation is built, but not counted as complete."""
+    """With a frame missing there is no animation; only it is downloaded again."""
     frames = RadarFrames()
-    images = {"http://x/f_20261030_1005.png": None}
+    images = {"http://x/f_20261030_1000.png": None}
     with patch(
         DOWNLOAD_IMAGE,
         side_effect=lambda url: images.get(url, Image.new("RGB", (5, 5))),
     ) as get:
-        newest, gif = frames.update(_urls(0, 5))
-        assert (newest, gif is not None) == (None, True)
+        assert frames.update(_urls(0, 5)) == (None, None)
+        assert frames.gif is None
 
         # The failed frame is downloaded again at the next try
         images.clear()
         newest, _ = frames.update(_urls(0, 5))
     assert newest == "http://x/f_20261030_1005.png"
-    assert [c.args[0][-8:-4] for c in get.call_args_list] == ["1000", "1005", "1005"]
+    assert [c.args[0][-8:-4] for c in get.call_args_list] == ["1000", "1005", "1000"]
+
+
+def test_frames_without_an_animation():
+    """Frames that cannot be animated count as a failure."""
+    frames = RadarFrames()
+    with (
+        patch(DOWNLOAD_IMAGE, return_value=Image.new("RGB", (5, 5))),
+        patch(
+            "custom_components.hungaromet_weather_and_forecast.radar.create_gif",
+            return_value=None,
+        ),
+    ):
+        assert frames.update(_urls(0)) == (None, None)
 
 
 def test_frames_without_any_download():
@@ -280,18 +293,20 @@ def test_national_rebuild_uses_the_open_data_listing(mock_get_urls):
 
 
 @patch("custom_components.hungaromet_weather_and_forecast.national_radar.get_latest_image_urls")
-def test_rebuild_without_listed_frames(mock_get_urls, caplog):
+def test_rebuild_without_listed_frames(mock_get_urls):
     """Test rebuild without listed frames."""
     mock_get_urls.return_value = []
+    image = _national()
 
-    assert _national()._rebuild_gif() == (None, None)
-    assert "No HungaroMet Radar frames listed" in caplog.text
+    assert image._rebuild_gif() == (None, None)
+    assert image._problem == "no frames are listed"
 
 
 @patch("custom_components.hungaromet_weather_and_forecast.national_radar.get_latest_image_urls")
-def test_rebuild_handles_network_error(mock_get_urls, caplog):
+def test_rebuild_handles_network_error(mock_get_urls):
     """Test rebuild handles network error."""
     mock_get_urls.side_effect = requests.RequestException("Network error")
+    image = _national()
 
-    assert _national()._rebuild_gif() == (None, None)
-    assert "Network error listing HungaroMet Radar frames" in caplog.text
+    assert image._rebuild_gif() == (None, None)
+    assert image._problem == "the frames could not be listed: Network error"

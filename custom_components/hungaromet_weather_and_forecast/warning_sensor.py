@@ -46,8 +46,8 @@ class WarningSensor(CoordinatorEntity[WarningCoordinator], SensorEntity):
 
     @property
     def available(self) -> bool:
-        """Keep showing the last levels when a download fails."""
-        return self.coordinator.data is not None
+        """Be unavailable after a failed download, or without levels."""
+        return super().available and self.native_value is not None
 
     def _levels(self) -> dict[str, str] | None:
         data = self.coordinator.data

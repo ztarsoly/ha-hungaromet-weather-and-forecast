@@ -152,42 +152,39 @@ def test_regional_radar_lists_its_own_quadrant():
     update.assert_called_once_with(["a.jpg", "b.jpg"])
 
 
-def test_regional_radar_network_error(caplog):
+def test_regional_radar_network_error():
     """Test regional radar network error."""
     entity = _regional()
     with patch.object(rr, "latest_frame_urls", side_effect=requests.ConnectionError("down")):
         assert entity._rebuild_gif() == (None, None)
-    assert "Network error listing Regional radar frames: down" in caplog.text
+    assert entity._problem == "the frames could not be listed: down"
 
 
-async def test_incomplete_animation_is_shown_but_retried():
-    """A frame missing: the GIF is shown, but the run is not counted as done."""
-    entity = _regional()
-    entity._added = True
-    entity.async_write_ha_state = MagicMock()
-
-    async def rebuild(_):
-        entity._frames._gif = b"partial"
-        return None, b"partial"
-
-    entity.hass.async_add_executor_job = AsyncMock(side_effect=rebuild)
-
-    assert await entity.async_update_data() is None
-
-    assert entity.image() == b"partial"
-    assert entity.image_last_updated is None
-    entity.async_write_ha_state.assert_called_once()
-
-
-async def test_failed_rebuild_keeps_the_last_animation():
-    """Test failed rebuild keeps the last animation."""
+async def test_failed_rebuilds_make_the_image_unavailable_and_log_once(caplog):
+    """Test failed rebuilds hide the old animation and are logged once."""
     entity = _regional()
     entity._added = True
     entity._frames._gif = b"old"
     entity.async_write_ha_state = MagicMock()
-    entity.hass.async_add_executor_job = AsyncMock(return_value=(None, None))
+    entity.hass.async_add_executor_job = AsyncMock(
+        side_effect=[(None, None), OSError("bad image"), ("http://x/f.jpg", b"new")]
+    )
 
-    await entity.async_update_data()
+    assert await entity.async_update_data() is None
+    assert entity.available is False
+    assert entity.image() is None
+    assert await entity.async_image() is None
+    assert await entity.async_update_data() is None
+    assert entity.available is False
+    assert entity.image_last_updated is None
 
-    assert entity.image() == b"old"
-    entity.async_write_ha_state.assert_not_called()
+    # The next rebuild that works brings it back
+    entity._frames._gif = b"new"
+    assert await entity.async_update_data() == "http://x/f.jpg"
+    assert entity.available is True
+    assert entity.image() == b"new"
+    assert entity.image_last_updated is not None
+    assert entity.async_write_ha_state.call_count == 3
+    assert [r.levelname for r in caplog.records] == ["WARNING", "WARNING"]
+    assert caplog.records[0].getMessage().startswith("Regional radar download failed")
+    assert caplog.records[1].getMessage() == "Regional radar download works again"

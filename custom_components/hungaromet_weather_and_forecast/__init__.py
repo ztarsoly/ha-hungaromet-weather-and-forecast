@@ -121,6 +121,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # must not stop the weather station sensors from loading
         await forecast.schedule.async_run_now()
         await forecast.warnings.schedule.async_run_now()
+        for coordinator in (forecast, forecast.warnings):
+            entry.async_on_unload(coordinator.async_retry_after_restart())
     hass.data.setdefault(ENTRY_NAMES, {})[entry.entry_id] = entry.title
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
     _async_ensure_radar_entry(hass)

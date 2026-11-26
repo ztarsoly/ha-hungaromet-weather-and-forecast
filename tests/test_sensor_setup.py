@@ -7,7 +7,7 @@ from collections import Counter
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from custom_components.hungaromet_weather_and_forecast import sensor
+from custom_components.hungaromet_weather_and_forecast import scheduler, sensor
 from custom_components.hungaromet_weather_and_forecast.station_sensor import (
     StationQuery,
     StationSensor,
@@ -147,7 +147,7 @@ async def test_a_failed_first_download_still_adds_the_sensors_and_retries(caplog
 
     hass.async_add_executor_job.side_effect = offline_daily
     entry = _entry()
-    with patch.object(sensor, "async_call_later") as call_later:
+    with patch.object(scheduler, "async_call_later") as call_later:
         ((sensors, _),) = (await _set_up(hass, entry))[0]
 
     daily = [s for s in sensors if s.feed.key == "daily"]
@@ -157,9 +157,9 @@ async def test_a_failed_first_download_still_adds_the_sensors_and_retries(caplog
     assert not any(s.available for s in daily)
     assert sensors[-1].native_value == 1  # the other feeds have theirs
     assert all(s.available for s in sensors if s.feed.key != "daily")
-    assert "Error updating daily sensors" in caplog.text
+    assert "HungaroMet daily weather download failed" in caplog.text
     ((hass_arg, delay, attempt),) = [c.args for c in call_later.call_args_list]
-    assert (hass_arg, delay) == (hass, sensor.FIRST_RETRY_DELAY)
+    assert (hass_arg, delay) == (hass, scheduler.STARTUP_RETRY_DELAY)
     # The retries stop when the entry unloads
     stop = entry.async_on_unload.call_args_list[0].args[0]
     stop()
@@ -169,7 +169,7 @@ async def test_a_failed_first_download_still_adds_the_sensors_and_retries(caplog
 
 def _retry(sensors):
     """Start the retries of the daily feed with call_later patched."""
-    with patch.object(sensor, "async_call_later") as call_later:
+    with patch.object(scheduler, "async_call_later") as call_later:
         stop = sensor._async_retry_first_download(
             MagicMock(), sensors, "daily", StationQuery()
         )
@@ -184,7 +184,7 @@ async def test_first_download_is_retried_until_it_works():
     attempt = call_later.call_args.args[2]
 
     with (
-        patch.object(sensor, "async_call_later") as again,
+        patch.object(scheduler, "async_call_later") as again,
         patch.object(sensor, "_async_update_feed", update),
     ):
         await attempt(None)  # fails: tried again
@@ -204,7 +204,7 @@ async def test_first_download_is_not_retried_without_enabled_sensors():
     _, call_later = _retry([disabled])
 
     with (
-        patch.object(sensor, "async_call_later") as again,
+        patch.object(scheduler, "async_call_later") as again,
         patch.object(sensor, "_async_update_feed", update),
     ):
         await call_later.call_args.args[2](None)

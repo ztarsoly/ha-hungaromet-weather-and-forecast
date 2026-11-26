@@ -66,6 +66,9 @@ async def test_async_setup_entry(forecast_setup):
     # The first forecast and warnings downloads come once the entities are added
     coordinator.schedule.async_run_now.assert_awaited_once()
     coordinator.warnings.schedule.async_run_now.assert_awaited_once()
+    # Both are also tried every minute until their first download works
+    coordinator.async_retry_after_restart.assert_called_once()
+    coordinator.warnings.async_retry_after_restart.assert_called_once()
 
 
 async def test_async_setup_entry_without_forecast(forecast_setup):
@@ -91,7 +94,7 @@ async def test_async_setup_entry_reloads_on_options_change(forecast_setup):
     entry.add_update_listener.assert_called_once_with(_async_reload_entry)
     # The name it was set up with, to spot a renamed entry
     assert hass.data["hungaromet_weather_and_forecast_names"] == {entry.entry_id: entry.title}
-    entry.async_on_unload.assert_called_once_with(
+    entry.async_on_unload.assert_any_call(
         entry.add_update_listener.return_value
     )
 
