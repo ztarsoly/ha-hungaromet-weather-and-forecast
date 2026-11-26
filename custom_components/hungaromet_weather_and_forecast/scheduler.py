@@ -9,13 +9,16 @@ from typing import TypeVar
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later, async_track_utc_time_change
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import (
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .failures import FailureLog
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__package__)
 
 _DataT = TypeVar("_DataT")
 
@@ -146,11 +149,18 @@ class ScheduledCoordinator(DataUpdateCoordinator[_DataT]):
     """A coordinator refreshed by a RetryingSchedule and the update service."""
 
     def __init__(
-        self, hass: HomeAssistant, logger: logging.Logger, *, name: str, **kwargs
+        self,
+        hass: HomeAssistant,
+        logger: logging.Logger,
+        *,
+        name: str,
+        place: str | None = None,
+        **kwargs,
     ) -> None:
         super().__init__(hass, _DebugLogger(logger, {}), name=name, **kwargs)
         label = name.replace(DOMAIN, "HungaroMet")
-        self._failure_log = FailureLog(logger, f"{label} download")
+        where = f" for {place}" if place else ""
+        self._failure_log = FailureLog(logger, f"{label} download{where}")
         # Whether a download has worked since the setup
         self._downloaded = False
 
@@ -160,8 +170,13 @@ class ScheduledCoordinator(DataUpdateCoordinator[_DataT]):
         if self.last_update_success:
             self._downloaded = True
             self._failure_log.succeeded()
-        else:
+        elif isinstance(self.last_exception, (UpdateFailed, TimeoutError)):
             self._failure_log.failed(self.last_exception)
+        else:
+            # Unexpected: with the traceback
+            self._failure_log.failed(
+                repr(self.last_exception), exc_info=self.last_exception
+            )
 
     @callback
     def async_retry_after_restart(self) -> Callable[[], None]:

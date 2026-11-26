@@ -37,7 +37,7 @@ from .scope import EntryScope, device_info
 from .updaters import async_register_updater
 from .warning import WarningCoordinator, async_setup_warnings
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__package__)
 
 # met.hu reissues the forecast during the day; check at every full hour, and
 # retry soon after a failed download
@@ -92,7 +92,8 @@ async def async_resolve_settlement(hass: HomeAssistant, name: str | None):
         return None, None
     try:
         settlement = await lookup_settlement(async_get_clientsession(hass), name)
-    except (aiohttp.ClientError, TimeoutError):
+    except (aiohttp.ClientError, TimeoutError) as err:
+        _LOGGER.error(str(err) or type(err).__name__)
         return None, "cannot_connect"
     if settlement is None:
         return None, "settlement_not_found"
@@ -122,6 +123,7 @@ class ForecastCoordinator(ScheduledCoordinator[ForecastData]):
             _LOGGER,
             config_entry=entry,
             name=f"{DOMAIN} forecast",
+            place=settlement.name,
             update_interval=None,
         )
         self.settlement = settlement
@@ -147,7 +149,11 @@ class ForecastCoordinator(ScheduledCoordinator[ForecastData]):
         """
         stored = await self._store.async_load()
         # Saved as "kod" up to 1.3.4
-        if not stored or stored.get("code", stored.get("kod")) != self.settlement.kod:
+        if not stored:
+            return
+        code = stored.get("code", stored.get("kod"))
+        if code != self.settlement.kod:
+            _LOGGER.debug("Saved data is for %s, not used", code)
             return
         try:
             self._saved = forecast_from_dict(
@@ -183,9 +189,7 @@ class ForecastCoordinator(ScheduledCoordinator[ForecastData]):
         try:
             data = await fetch_forecast(session, self.settlement)
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
-            raise UpdateFailed(
-                f"met.hu forecast for {self.settlement.name} failed: {err}"
-            ) from err
+            raise UpdateFailed(str(err) or type(err).__name__) from err
         now = dt_util.now()
         data = keep_dropped_row(data, self.data or self._saved, now)
         # The hours continue from those shown only while the downloads work:

@@ -293,7 +293,7 @@ async def test_coordinator_update_failure(error):
     with (
         patch.object(warning, "async_get_clientsession"),
         patch.object(warning, "fetch_warnings", AsyncMock(side_effect=error)),
-        pytest.raises(UpdateFailed, match="Debrecen"),
+        pytest.raises(UpdateFailed, match="^(x|TimeoutError)$"),
     ):
         await coordinator._async_update_data()
 

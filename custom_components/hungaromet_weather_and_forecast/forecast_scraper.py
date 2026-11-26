@@ -40,7 +40,9 @@ from astral.sun import elevation
 from bs4 import BeautifulSoup, Tag
 from homeassistant.util import dt as dt_util
 
-_LOGGER = logging.getLogger(__name__)
+from .failures import warn_once
+
+_LOGGER = logging.getLogger(__package__)
 
 SITE = "https://www.met.hu"
 SEARCH_URL = f"{SITE}/jquery/search.php"
@@ -106,7 +108,7 @@ CONDITION_WORDS = (
     ("derült", "sunny"),
 )
 CONDITION_STATES = list(
-    dict.fromkeys([*(c for _, c in CONDITION_WORDS), "clear-night", "exceptional"])
+    dict.fromkeys([*(c for _, c in CONDITION_WORDS), "clear-night"])
 )
 
 NUMBER = re.compile(r"-?\d+(?:[.,]\d+)?")
@@ -357,7 +359,7 @@ def _wind(cells: dict[str, list[Tag]]) -> tuple[float | None, str | None]:
     name = _text(cells["Wd"][0]).lower() if cells.get("Wd") else ""
     direction = WIND_NAMES.get(name)
     if name and direction is None:
-        _LOGGER.warning("Unknown met.hu wind direction %s", name)
+        warn_once(_LOGGER, "Unknown met.hu wind direction %r", name)
     if bearing is None:
         return bearing, direction
     return bearing, bearing_to_direction(bearing)
@@ -373,19 +375,22 @@ def _weather(cells: dict[str, list[Tag]]) -> str | None:
         tooltip = re.search(r"class=ktext>([^<]*)<", td.get("onmouseover", ""))
         description = tooltip[1].strip() if tooltip else ""
         condition = condition_for(description, night=symbol[2] == "e")
-        if condition == "exceptional":
-            _LOGGER.warning("Unknown met.hu weather %r (%s)", description, symbol[1])
+        if condition is None:
+            warn_once(_LOGGER, "Unknown met.hu weather %r", description)
         return condition
     return None
 
 
-def condition_for(description: str, night: bool = False) -> str:
-    """Return the Home Assistant condition for met.hu's weather description."""
+def condition_for(description: str, night: bool = False) -> str | None:
+    """Return the Home Assistant condition for met.hu's weather description.
+
+    None for a description it does not recognise.
+    """
     text = description.lower()
     for word, condition in CONDITION_WORDS:
         if word in text:
             return "clear-night" if condition == "sunny" and night else condition
-    return "exceptional"
+    return None
 
 
 def _issue_time(text: str) -> datetime | None:
@@ -454,8 +459,16 @@ def forecast_from_dict(
 
     def period(values: dict) -> ForecastPeriod:
         time = values.get("forecast_time")
+        condition = values.get("weather_condition")
         return ForecastPeriod(
-            **{**values, "forecast_time": datetime.fromisoformat(time) if time else None}
+            **{
+                **values,
+                "forecast_time": datetime.fromisoformat(time) if time else None,
+                # Earlier versions saved conditions that are no states now
+                "weather_condition": (
+                    condition if condition in CONDITION_STATES else None
+                ),
+            }
         )
 
     issued = stored.get("issued")

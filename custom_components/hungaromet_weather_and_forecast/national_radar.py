@@ -50,7 +50,7 @@ DEVICE_ID = "hungaromet_radar_gif"
 class HungarometRadarImage(RadarImage):
     """The national radar image."""
 
-    _label = "HungaroMet Radar"
+    _label = "HungaroMet national radar"
 
     def __init__(self, hass):
         # Made from the device and an old name, so it must not change

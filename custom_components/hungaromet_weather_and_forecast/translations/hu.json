@@ -428,8 +428,7 @@
           "snowy-rainy": "Havas eső",
           "snowy": "Havazás",
           "hail": "Jégeső",
-          "pouring": "Zápor",
-          "exceptional": "Rendkívüli"
+          "pouring": "Zápor"
         }
       },
       "forecast_issued": {

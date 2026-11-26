@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant, ServiceCall, callback
 
 from .const import DOMAIN
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__package__)
 
 UPDATERS = f"{DOMAIN}_updaters"
 SERVICE_UPDATE = "update"

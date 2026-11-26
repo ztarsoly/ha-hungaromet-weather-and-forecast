@@ -82,6 +82,18 @@ def test_forecast_saved_without_hours_gets_them_from_its_rows():
     assert data.hourly == _forecast().hourly
 
 
+def test_a_saved_condition_that_is_no_state_comes_back_as_no_value():
+    """Test the "exceptional" saved by earlier versions is dropped."""
+    stored = forecast_to_dict(_forecast())
+    for row in (*stored["periods"], *stored["hourly"]):
+        row["weather_condition"] = "exceptional"
+
+    data = forecast_from_dict(stored, NOW)
+
+    assert {p.weather_condition for p in (*data.periods, *data.hourly)} == {None}
+    assert data.current.weather_condition is None
+
+
 def test_forecast_round_trip_without_times():
     """Test forecast round trip without times."""
     data = ForecastData(settlement="X", periods=[ForecastPeriod(temperature=1)])

@@ -129,6 +129,20 @@ async def test_failed_downloads_are_logged_once_and_so_is_the_recovery(caplog):
     ]
 
 
+async def test_an_unexpected_error_is_logged_with_its_traceback(caplog):
+    """Test a bug in a download is logged with its traceback."""
+    hass = SimpleNamespace(async_add_executor_job=AsyncMock(side_effect=KeyError("bug")))
+    sensor = _added(_value(hass, "daily", "t", 1.0))
+
+    await _async_update_feed(hass, [sensor], "daily", StationQuery())
+
+    [record] = caplog.records
+    assert record.getMessage() == (
+        "HungaroMet daily weather download failed: KeyError('bug')"
+    )
+    assert record.exc_info
+
+
 async def test_a_failed_entity_update_makes_the_sensor_unavailable():
     """Test a failed update_entity makes the sensor unavailable."""
     hass = SimpleNamespace(async_add_executor_job=AsyncMock(side_effect=OSError("down")))

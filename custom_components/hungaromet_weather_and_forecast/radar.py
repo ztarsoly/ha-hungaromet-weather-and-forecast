@@ -21,7 +21,7 @@ from .failures import FailureLog
 from .scheduler import RetryingSchedule
 from .updaters import async_register_updater
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__package__)
 
 REQUEST_TIMEOUT = 10
 
@@ -180,7 +180,7 @@ class RadarImage(ImageEntity):  # pylint: disable=too-many-instance-attributes
     # Named on its own, without its device's name in front
     _attr_has_entity_name = False
     # Names the image in log messages
-    _label = "Radar"
+    _label = "HungaroMet radar"
 
     def __init__(self, hass, unique_id: str):
         super().__init__(hass)
@@ -261,17 +261,24 @@ class RadarImage(ImageEntity):  # pylint: disable=too-many-instance-attributes
         """Rebuild the GIF and return its newest frame's URL, or None."""
         if not self._added:
             return None
+        error = None
         try:
             frame_url, gif = await self.hass.async_add_executor_job(
                 self._rebuild_gif
             )
         except Exception as err:  # pylint: disable=broad-exception-caught
             # For example a broken image; it must not stop the schedule
-            self._problem = str(err)
+            error = err
             frame_url, gif = None, None
         self._download_failed = gif is None
         if gif is None:
-            self._failure_log.failed(self._problem)
+            if error is None:
+                self._failure_log.failed(self._problem)
+            elif isinstance(error, (OSError, ValueError)):
+                self._failure_log.failed(error)
+            else:
+                # With the traceback
+                self._failure_log.failed(repr(error), exc_info=error)
             frame_url = None
         else:
             self._failure_log.succeeded()

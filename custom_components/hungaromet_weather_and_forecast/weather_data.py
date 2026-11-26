@@ -25,6 +25,11 @@ except ImportError:  # pragma: no cover - standalone CLI usage
         URL_TEN_MINUTES,
     )
 
+try:
+    from .failures import warn_once
+except ImportError:  # pragma: no cover - standalone CLI usage
+    from failures import warn_once
+
 try:  # Optional local fallback for CLI usage
     from . import local_config as _local_config  # type: ignore
 except ImportError:  # pragma: no cover - optional helper
@@ -35,7 +40,7 @@ except ImportError:  # pragma: no cover - optional helper
 
 from homeassistant.util import dt as dt_util
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__package__)
 REQUEST_TIMEOUT = 15
 
 
@@ -152,7 +157,8 @@ def select_stations(
     if not in_range.empty:
         return in_range
     nearest = df.iloc[0]
-    _LOGGER.warning(
+    warn_once(
+        _LOGGER,
         "No HungaroMet station with data within %s km; using nearest station %s (%.1f km)",
         distance_km,
         nearest["StationName"],

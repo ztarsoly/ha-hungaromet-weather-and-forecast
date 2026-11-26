@@ -186,5 +186,25 @@ async def test_failed_rebuilds_make_the_image_unavailable_and_log_once(caplog):
     assert entity.image_last_updated is not None
     assert entity.async_write_ha_state.call_count == 3
     assert [r.levelname for r in caplog.records] == ["WARNING", "WARNING"]
-    assert caplog.records[0].getMessage().startswith("Regional radar download failed")
-    assert caplog.records[1].getMessage() == "Regional radar download works again"
+    assert caplog.records[0].getMessage().startswith(
+        "HungaroMet regional radar download failed"
+    )
+    assert caplog.records[1].getMessage() == (
+        "HungaroMet regional radar download works again"
+    )
+
+
+async def test_an_unexpected_rebuild_error_is_logged_with_its_traceback(caplog):
+    """Test a bug in a rebuild is logged with its traceback."""
+    entity = _regional()
+    entity._added = True
+    entity.async_write_ha_state = MagicMock()
+    entity.hass.async_add_executor_job = AsyncMock(side_effect=KeyError("bug"))
+
+    assert await entity.async_update_data() is None
+
+    [record] = caplog.records
+    assert record.getMessage() == (
+        "HungaroMet regional radar download failed: KeyError('bug')"
+    )
+    assert record.exc_info

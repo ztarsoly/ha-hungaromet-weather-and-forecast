@@ -179,12 +179,12 @@ Az újrapróbálkozás legfeljebb a következő ütemezett frissítésig tart. E
 Az érzékelők, az időjárás-entitás és a radarképek *ismeretlen* érték és elavult adat helyett **nem elérhetők** (unavailable):
 
 - ha a legutóbbi letöltésük nem sikerült, a következő sikeres letöltésig (az előrejelzés kivételével, lásd lent);
-- ha a sikeres letöltésben nincs értékük, például az állomások nem mérik az adott mennyiséget;
+- ha a sikeres letöltésben nincs értékük, például az állomások nem mérik az adott mennyiséget, vagy a met.hu időjárás-leírása ismeretlen (ilyenkor az adott órának nincs időjárási helyzete);
 - ha az előrejelzés nem tartalmazza az aktuális órát. Ez az első telepítés után fordulhat elő, legfeljebb a következő előrejelzési sor időpontjáig. Ilyenkor az időjárás-entitás előrejelzése sem érhető el.
 
 **Kivétel az előrejelzés:** ha a letöltése nem sikerül, az előrejelzés-érzékelők és az időjárás-entitás az utolsó letöltött (újraindítás után a mentett) előrejelzést követik óráról órára. Csak akkor nem elérhetők, ha abban már nincs benne az aktuális óra. A riasztás és a figyelmeztetés ilyenkor is nem elérhető.
 
-A sikertelen letöltést az integráció egyszer, figyelmeztetésként (WARNING) írja a naplóba, a következő sikeres letöltést pedig szintén egyszer. A közbenső sikertelen próbálkozások nem kerülnek a naplóba.
+A sikertelen letöltést az integráció egyszer, figyelmeztetésként (WARNING) írja a naplóba, a következő sikeres letöltést pedig szintén egyszer. A közbenső sikertelen próbálkozások nem kerülnek a naplóba. Váratlan hibánál a figyelmeztetés a hiba részleteit (traceback) is tartalmazza. Az ismeretlen időjárás-leírásról és szélirányról értékenként egy figyelmeztetés kerül a naplóba, és egy arról is, ha a megadott távolságon belül nincs mérő állomás, ezért a legközelebbit használja.
 
 ## Adatforrások
 

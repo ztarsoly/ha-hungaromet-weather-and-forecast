@@ -20,7 +20,7 @@ import aiohttp
 
 from .forecast_scraper import HUNGARY_TZ, REQUEST_HEADERS, SITE
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__package__)
 
 WARNING_PAGE_URL = f"{SITE}/idojaras/veszelyjelzes/"
 SNIPPET_URL = f"{WARNING_PAGE_URL}hover.php"

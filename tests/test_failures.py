@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.hungaromet_weather_and_forecast import scheduler
+from custom_components.hungaromet_weather_and_forecast import failures, scheduler
 
 _LOGGER = logging.getLogger("hungaromet_test")
 
@@ -50,7 +50,37 @@ async def test_a_coordinator_warns_once_per_failure_and_recovery(caplog):
     assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
         ("WARNING", "Forecast download failed: down"),
         ("WARNING", "Forecast download works again"),
-        ("WARNING", "Forecast download failed: "),
+        ("WARNING", "Forecast download failed: TimeoutError"),
+    ]
+
+
+async def test_an_unexpected_error_is_logged_with_its_traceback(caplog):
+    """Test a bug is logged with its traceback, an expected failure without."""
+    coordinator = _Coordinator(
+        _hass(), _LOGGER, name="Forecast", place="Debrecen", config_entry=None
+    )
+    coordinator.results = [UpdateFailed("down"), "data", KeyError("bug")]
+
+    for _ in range(3):
+        await coordinator.async_refresh()
+
+    expected, _, unexpected = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert expected.getMessage() == "Forecast download for Debrecen failed: down"
+    assert not expected.exc_info
+    assert unexpected.getMessage().endswith("failed: KeyError('bug')")
+    assert unexpected.exc_info
+
+
+async def test_warn_once(caplog):
+    """Test a warning is logged once for each set of arguments."""
+    failures._WARNED.clear()
+
+    for value in ("a", "a", "b"):
+        failures.warn_once(_LOGGER, "Unknown %r", value)
+
+    assert [r.getMessage() for r in caplog.records] == [
+        "Unknown 'a'",
+        "Unknown 'b'",
     ]
 
 

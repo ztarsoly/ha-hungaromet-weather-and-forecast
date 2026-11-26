@@ -1,5 +1,8 @@
 """Tests for weather_data.py"""
 
+# The tests check the integration's internals
+# pylint: disable=protected-access
+
 import io
 import json
 import zipfile
@@ -8,6 +11,7 @@ from unittest.mock import Mock, patch
 import pandas as pd
 import pytest
 
+from custom_components.hungaromet_weather_and_forecast import failures
 from custom_components.hungaromet_weather_and_forecast.weather_data import (
     _get_reference_coords,
     fetch_data,
@@ -450,13 +454,15 @@ def test_select_stations_keeps_stations_in_range_sorted():
 
 
 def test_select_stations_falls_back_to_nearest(caplog):
-    """When no station is in range, the nearest one is used."""
+    """When no station is in range, the nearest one is used; warned once."""
+    failures._WARNED.clear()
     df = _stations_df().iloc[1:]
 
     result = select_stations(df, 47.5, 19.0, 5)
 
     assert list(result["StationName"]) == ["Mid"]
-    assert "using nearest station Mid" in caplog.text
+    select_stations(df, 47.5, 19.0, 5)
+    assert caplog.text.count("using nearest station Mid") == 1
 
 
 def _with_readings(*temperatures):
@@ -478,6 +484,7 @@ def test_select_stations_uses_nearest_with_data_when_the_only_one_in_range_has_n
     caplog,
 ):
     """Only the nearest station is in range but has no data: the nearest with data is used."""
+    failures._WARNED.clear()
     df = _with_readings(None, 5.0, 6.0)
 
     result = select_stations(df, 47.5, 19.0, 5)

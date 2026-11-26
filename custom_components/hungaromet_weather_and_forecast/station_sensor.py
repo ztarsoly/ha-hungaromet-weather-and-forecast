@@ -8,6 +8,7 @@ stations.
 from __future__ import annotations
 
 import logging
+import zipfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -25,7 +26,9 @@ from .weather_data import (
     process_ten_minutes_data,
 )
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__package__)
+# A download that can fail like this: the network, the file or its content
+EXPECTED_ERRORS = (OSError, ValueError, zipfile.BadZipFile)
 
 
 @dataclass(frozen=True)
@@ -209,7 +212,11 @@ async def async_download_feed(
     except Exception as err:  # pylint: disable=broad-exception-caught
         # A failed download (network, missing file, unexpected CSV) must not
         # stop the schedule; it is retried
-        log.failed(err)
+        if isinstance(err, EXPECTED_ERRORS):
+            log.failed(err)
+        else:
+            # With the traceback
+            log.failed(repr(err), exc_info=err)
         return None
     log.succeeded()
     return result

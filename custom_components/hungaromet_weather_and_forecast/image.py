@@ -13,7 +13,7 @@ from .national_radar import HungarometRadarImage
 from .regional_radar import HungarometRegionalRadarImage, quadrant_for
 from .scope import EntryScope, is_radar_entry
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__package__)
 
 
 async def async_setup_entry(

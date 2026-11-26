@@ -428,8 +428,7 @@
           "snowy-rainy": "Snowy, rainy",
           "snowy": "Snowy",
           "hail": "Hail",
-          "pouring": "Pouring",
-          "exceptional": "Exceptional"
+          "pouring": "Pouring"
         }
       },
       "forecast_issued": {

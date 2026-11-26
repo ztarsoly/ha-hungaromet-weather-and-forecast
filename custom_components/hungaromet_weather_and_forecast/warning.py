@@ -16,7 +16,7 @@ from .scheduler import RetryingSchedule, ScheduledCoordinator
 from .updaters import async_register_updater
 from .warning_scraper import Warnings, fetch_warnings, find_district
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__package__)
 
 # Checked at every full hour, and retried soon after a failed download
 WARNING_SCHEDULE = {"minute": 0, "second": 59}
@@ -41,6 +41,7 @@ class WarningCoordinator(ScheduledCoordinator[Warnings]):
             _LOGGER,
             config_entry=entry,
             name=f"{DOMAIN} warnings",
+            place=settlement.name,
             update_interval=None,
         )
         self.settlement = settlement
@@ -63,9 +64,7 @@ class WarningCoordinator(ScheduledCoordinator[Warnings]):
         try:
             return await fetch_warnings(session, self.district)
         except (aiohttp.ClientError, TimeoutError, ValueError) as err:
-            raise UpdateFailed(
-                f"met.hu warnings for {self.settlement.name} failed: {err}"
-            ) from err
+            raise UpdateFailed(str(err) or type(err).__name__) from err
 
 
 async def async_setup_warnings(

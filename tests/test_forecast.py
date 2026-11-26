@@ -12,7 +12,12 @@ import pytest
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.hungaromet_weather_and_forecast import forecast, options_flow, scheduler
+from custom_components.hungaromet_weather_and_forecast import (
+    failures,
+    forecast,
+    options_flow,
+    scheduler,
+)
 from custom_components.hungaromet_weather_and_forecast import weather as weather_platform
 from custom_components.hungaromet_weather_and_forecast.const import (
     CONF_FORECAST,
@@ -139,19 +144,20 @@ def test_parse_page_reads_every_row(data):
 
 def test_parse_page_conditions_and_wind(caplog):
     """Test parse page conditions and wind."""
+    failures._WARNED.clear()
     data = parse_page(PAGE, "Debrecen", NOW)
     assert [p.weather_condition for p in data.periods] == [
         "partlycloudy",
         "pouring",
         "clear-night",
-        "exceptional",
+        None,
     ]
     # The direction comes from the bearing on 16 points (met.hu says "északi"
     # for 12°, which is NNE); calm stays calm, and an unknown name still gets
     # a direction from its bearing
     assert [p.wind_direction for p in data.periods] == ["nne", "nne", "nne", "nne"]
-    assert "Unknown met.hu weather 'furcsa idő' (w999)" in caplog.text
-    assert "Unknown met.hu wind direction furcsa" in caplog.text
+    assert "Unknown met.hu weather 'furcsa idő'" in caplog.text
+    assert "Unknown met.hu wind direction 'furcsa'" in caplog.text
 
 
 @pytest.mark.parametrize(
@@ -176,13 +182,23 @@ def test_parse_page_conditions_and_wind(caplog):
         ("havazás", False, "snowy"),
         ("hózápor", False, "snowy"),
         ("jégeső", False, "hail"),
-        ("", False, "exceptional"),
+        ("", False, None),
     ],
 )
 def test_condition_for(description, night, condition):
     """Test condition for."""
     assert condition_for(description, night) == condition
-    assert condition in CONDITION_STATES
+    assert condition is None or condition in CONDITION_STATES
+
+
+def test_an_unknown_description_is_warned_about_once(caplog):
+    """Test each unrecognised description is warned about only once."""
+    failures._WARNED.clear()
+
+    parse_page(PAGE, "Debrecen", NOW)
+    parse_page(PAGE, "Debrecen", NOW)
+
+    assert caplog.text.count("Unknown met.hu weather 'furcsa idő'") == 1
 
 
 def test_current_period_is_the_current_hour(data):
@@ -593,7 +609,7 @@ async def test_coordinator_update_failure(error):
     with (
         patch.object(forecast, "async_get_clientsession"),
         patch.object(forecast, "fetch_forecast", AsyncMock(side_effect=error)),
-        pytest.raises(UpdateFailed, match="Debrecen"),
+        pytest.raises(UpdateFailed, match="^(x|TimeoutError)$"),
     ):
         await coordinator._async_update_data()
 
@@ -769,7 +785,7 @@ def test_enum_sensors_list_their_states():
     # None on Home Assistant versions without the wind direction device class
     assert by_key["wind_bearing"].device_class == WIND_DIRECTION
     assert by_key["pressure"].device_class == SensorDeviceClass.ATMOSPHERIC_PRESSURE
-    assert "exceptional" in CONDITION_STATES
+    assert "exceptional" not in CONDITION_STATES
     assert len(WIND_DIRECTION_STATES) == 16
     assert not {"calm", "variable"} & set(WIND_DIRECTION_STATES)
 

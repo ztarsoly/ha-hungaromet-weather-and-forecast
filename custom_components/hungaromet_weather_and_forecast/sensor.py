@@ -25,7 +25,7 @@ from .station_sensor import (
 from .updaters import async_register_updater
 from .warning_sensor import warning_sensors
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__package__)
 
 
 def _feed_sensors(sensors: list[FeedSensor], data_type: str) -> list[FeedSensor]:

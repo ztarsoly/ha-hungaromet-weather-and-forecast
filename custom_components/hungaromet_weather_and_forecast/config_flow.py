@@ -26,7 +26,7 @@ from .options_flow import (
 )
 from .scope import is_radar_entry
 
-_LOGGER = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__package__)
 
 
 class HungarometConfigFlow(ConfigFlow, domain=DOMAIN):

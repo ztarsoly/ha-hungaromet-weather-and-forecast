@@ -53,7 +53,7 @@ DEVICE_ID = "hungaromet_regional_radar"
 class HungarometRegionalRadarImage(RadarImage):
     """Animated met.hu radar image of the quadrant covering an entry's location."""
 
-    _label = "Regional radar"
+    _label = "HungaroMet regional radar"
 
     def __init__(self, hass, scope: EntryScope, quadrant: str):
         super().__init__(hass, scoped_id(scope, DEVICE_ID))
