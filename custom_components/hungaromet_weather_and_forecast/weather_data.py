@@ -1,13 +1,16 @@
 """Downloading HungaroMet's observation feeds and averaging the nearby stations."""
 
+import csv
+import importlib
 import io
-import json
 import logging
 import math
+import statistics
 import zipfile
+from collections import Counter
 from datetime import datetime, timedelta
+from typing import Any
 
-import pandas as pd
 import requests
 
 try:
@@ -25,23 +28,26 @@ except ImportError:  # pragma: no cover - standalone CLI usage
         URL_TEN_MINUTES,
     )
 
-try:
-    from .failures import warn_once
-except ImportError:  # pragma: no cover - standalone CLI usage
-    from failures import warn_once
-
-try:  # Optional local fallback for CLI usage
-    from . import local_config as _local_config  # type: ignore
-except ImportError:  # pragma: no cover - optional helper
-    try:
-        import local_config as _local_config  # type: ignore
-    except ImportError:  # pragma: no cover - optional helper
-        _local_config = None
-
 from homeassistant.util import dt as dt_util
+
+try:  # Optional local coordinates for CLI usage
+    # By name: "from . import" would count as importing the whole integration
+    _local_config = importlib.import_module(
+        f"{__package__}.local_config" if __package__ else "local_config"
+    )
+except ImportError:  # pragma: no cover - optional helper
+    _local_config = None  # pylint: disable=invalid-name
 
 _LOGGER = logging.getLogger(__package__)
 REQUEST_TIMEOUT = 15
+
+# One station's reading: its values by column name, None where there is none
+Row = dict[str, Any]
+
+# Texts of a feed's field that hold no value
+BLANKS = frozenset({"", "NA", "N/A", "n/a", "NaN", "nan", "null", "NULL", "None"})
+# The feeds' "no data" values, in number and in text columns
+NO_DATA = (-999, "-999")
 
 
 # Compass directions are averaged as angles, not plain numbers
@@ -85,47 +91,140 @@ def _get_reference_coords(hass, location=None):
     )
 
 
-def fetch_data(url: str) -> pd.DataFrame:
+def fetch_data(url: str) -> list[Row]:
     """Download a zipped feed and read its CSV file."""
     response = requests.get(url, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
-    with zipfile.ZipFile(io.BytesIO(response.content)) as z:
-        csv_filename = z.namelist()[0]
-        with z.open(csv_filename) as csvfile:
-            df = pd.read_csv(csvfile, sep=";", comment="/", skipinitialspace=True)
-    return df
+    return parse_csv(_unzip_first_file(response.content).decode("utf-8-sig"))
 
 
-def clean_data(df: pd.DataFrame) -> pd.DataFrame:
-    """Turn the feed's "no data" values into NA and trim column and station names."""
-    # Numbers and text columns (wind direction, gust time) both use -999 for no data
-    df.replace([-999, "-999"], pd.NA, inplace=True)
-    df.columns = df.columns.str.strip()
-    if "StationName" in df.columns:
-        df["StationName"] = df["StationName"].str.strip()
-    return df
+def _unzip_first_file(content: bytes) -> bytes:
+    """Return the content of a ZIP file's first file.
+
+    An archive that cannot be read raises BadZipFile or ValueError.
+    """
+    try:
+        with zipfile.ZipFile(io.BytesIO(content)) as archive:
+            names = archive.namelist()
+            first = archive.read(names[0]) if names else None
+    except zipfile.BadZipFile:
+        raise
+    # A broken file raises many other errors too: an unknown ZIP version,
+    # compression or encryption, or a decompressor's own error
+    except Exception as err:
+        raise ValueError(
+            f"The feed's ZIP file cannot be read: {str(err) or type(err).__name__}"
+        ) from err
+    if first is None:
+        raise ValueError("The feed's ZIP file is empty.")
+    return first
 
 
-def add_distance_column(
-    df: pd.DataFrame, ref_lat: float, ref_lon: float
-) -> pd.DataFrame:
-    """Add each station's distance from the reference point, in kilometres."""
-    df["Latitude"] = pd.to_numeric(df["Latitude"], errors="coerce")
-    df["Longitude"] = pd.to_numeric(df["Longitude"], errors="coerce")
-    df["Distance_km"] = df.apply(
-        lambda row: haversine(row["Latitude"], row["Longitude"], ref_lat, ref_lon),
-        axis=1,
+def parse_csv(text: str) -> list[Row]:
+    """Read a feed's CSV text: one row per line, by the header's column names.
+
+    Fields are separated by semicolons and padded with spaces; lines starting
+    with "/" are comments. A column's values all get the same type.
+    """
+    reader = csv.reader(
+        (line for line in text.splitlines() if not line.startswith("/")),
+        delimiter=";",
+        skipinitialspace=True,
     )
-    return df
+    try:
+        records = [record for record in reader if record]
+    except csv.Error as err:
+        raise ValueError(f"The feed is not valid CSV: {err}") from err
+    if not records:
+        raise ValueError("The feed is empty.")
+    header, *records = records
+    if any(len(record) > len(header) for record in records):
+        raise ValueError("The feed has a line with more fields than its header.")
+    columns = [
+        _typed([record[i].strip() if i < len(record) else "" for record in records])
+        for i in range(len(header))
+    ]
+    return [dict(zip(header, values)) for values in zip(*columns)]
 
 
-def latest_observations(df: pd.DataFrame) -> pd.DataFrame:
+def _typed(texts: list[str]) -> list:
+    """Turn a column's texts into whole numbers, numbers or texts.
+
+    None stands for a blank; a column of numbers with blanks has no whole numbers.
+    """
+    present = [text for text in texts if text not in BLANKS]
+    kinds = (int, float) if len(present) == len(texts) else (float,)
+    for kind in kinds:
+        try:
+            numbers = iter([kind(text) for text in present])
+        except ValueError:
+            continue
+        return [None if text in BLANKS else next(numbers) for text in texts]
+    return [None if text in BLANKS else text for text in texts]
+
+
+def to_number(value) -> int | float | None:
+    """Return a value as a number, or None if it is not one."""
+    if isinstance(value, str):
+        for kind in (int, float):
+            try:
+                value = kind(value)
+                break
+            except ValueError:
+                continue
+    if not isinstance(value, (int, float)) or math.isnan(value):
+        return None
+    return value
+
+
+def clean_data(rows: list[Row]) -> list[Row]:
+    """Turn the feed's "no data" values into None and trim column and station names."""
+    cleaned = []
+    for row in rows:
+        clean = {
+            name.strip(): None if value in NO_DATA else value
+            for name, value in row.items()
+        }
+        if isinstance(clean.get("StationName"), str):
+            clean["StationName"] = clean["StationName"].strip()
+        cleaned.append(clean)
+    return cleaned
+
+
+def pick_columns(rows: list[Row], columns: list[str]) -> list[Row]:
+    """Keep these columns, in this order; None where a row does not have one."""
+    return [{column: row.get(column) for column in columns} for row in rows]
+
+
+def add_distance_column(rows: list[Row], ref_lat: float, ref_lon: float) -> list[Row]:
+    """Add each station's distance from the reference point, in kilometres.
+
+    The distance is None for a station without usable coordinates.
+    """
+    result = []
+    for row in rows:
+        lat, lon = to_number(row.get("Latitude")), to_number(row.get("Longitude"))
+        distance = (
+            None
+            if lat is None or lon is None
+            else haversine(lat, lon, ref_lat, ref_lon)
+        )
+        result.append(
+            {**row, "Latitude": lat, "Longitude": lon, "Distance_km": distance}
+        )
+    return result
+
+
+def latest_observations(rows: list[Row]) -> list[Row]:
     """Keep only rows from the file's newest observation time.
 
     HungaroMet's files also repeat earlier readings that changed in the last 24
     hours, so a station can appear more than once with older times.
     """
-    return df[df["Time"] == df["Time"].max()]
+    latest = max(
+        (row["Time"] for row in rows if row.get("Time") is not None), default=None
+    )
+    return [row for row in rows if latest is not None and row.get("Time") == latest]
 
 
 # The columns that identify and place a station, not measurements
@@ -136,40 +235,48 @@ NOT_MEASUREMENTS = {
 
 
 def select_stations(
-    df: pd.DataFrame, ref_lat: float, ref_lon: float, distance_km: float
-) -> pd.DataFrame:
+    rows: list[Row], ref_lat: float, ref_lon: float, distance_km: float
+) -> list[Row]:
     """Keep the stations with data within distance_km, or the nearest one with
-    data if none are in range.
+    data if none are in range; the nearest one comes first.
 
     A station whose readings are all missing (-999) is not available, so it
     is left out like a station that is not in the file.
     """
-    df = add_distance_column(df, ref_lat, ref_lon)
-    df = df.dropna(subset=["Distance_km"]).sort_values(by="Distance_km")
-    if df.empty:
-        raise ValueError("No HungaroMet station has valid coordinates.")
-    measured = [column for column in df.columns if column not in NOT_MEASUREMENTS]
-    if measured:
-        df = df[df[measured].notna().any(axis=1)]
-        if df.empty:
-            raise ValueError("No HungaroMet station has data.")
-    in_range = df[df["Distance_km"] <= distance_km]
-    if not in_range.empty:
-        return in_range
-    nearest = df.iloc[0]
-    warn_once(
-        _LOGGER,
-        "No HungaroMet station with data within %s km; using nearest station %s (%.1f km)",
-        distance_km,
-        nearest["StationName"],
-        nearest["Distance_km"],
+    placed = sorted(
+        (
+            row
+            for row in add_distance_column(rows, ref_lat, ref_lon)
+            if row["Distance_km"] is not None
+        ),
+        key=lambda row: row["Distance_km"],
     )
-    return df[df["StationNumber"] == nearest["StationNumber"]]
+    if not placed:
+        raise ValueError("No HungaroMet station has valid coordinates.")
+    measured = [column for column in placed[0] if column not in NOT_MEASUREMENTS]
+    if measured:
+        placed = [
+            row for row in placed if any(row.get(c) is not None for c in measured)
+        ]
+        if not placed:
+            raise ValueError("No HungaroMet station has data.")
+    in_range = [row for row in placed if row["Distance_km"] <= distance_km]
+    if in_range:
+        return in_range
+    nearest = placed[0]["StationNumber"]
+    return [row for row in placed if row["StationNumber"] == nearest]
 
 
-def station_records(df: pd.DataFrame) -> list[dict]:
+def station_records(rows: list[Row]) -> list[Row]:
     """Return each selected station's full row, nearest first, with JSON-safe values."""
-    return json.loads(df.drop_duplicates().to_json(orient="records"))
+    records: dict[tuple, Row] = {}
+    for row in rows:
+        record = {
+            name: round(value, 10) if isinstance(value, float) else value
+            for name, value in row.items()
+        }
+        records.setdefault(tuple(record.items()), record)
+    return list(records.values())
 
 
 def circular_mean(degrees) -> float:
@@ -182,58 +289,63 @@ def circular_mean(degrees) -> float:
     return round(math.degrees(angle), 6) % 360
 
 
-def calculate_mean_values(df: pd.DataFrame, numeric_columns: list) -> dict:
+def calculate_mean_values(rows: list[Row], numeric_columns: list) -> dict:
     """Average each column over the selected stations; None when no station has it."""
     means = {}
     for col in numeric_columns:
-        if col not in df.columns:
+        if not any(col in row for row in rows):
             continue
-        values = pd.to_numeric(df[col], errors="coerce").dropna()
-        if values.empty:
+        values = [
+            number for row in rows if (number := to_number(row.get(col))) is not None
+        ]
+        if not values:
             means[col] = None
         elif col in DIRECTION_COLUMNS:
             means[col] = circular_mean(values)
         else:
-            means[col] = values.mean()
+            means[col] = statistics.fmean(values)
     return means
 
 
-def nearest_value(df: pd.DataFrame, column: str):
+def nearest_value(rows: list[Row], column: str):
     """Return the nearest station's value of a column that cannot be averaged."""
-    values = df[column].dropna()
-    return str(values.iloc[0]).strip() if not values.empty else None
+    return next(
+        (str(row[column]).strip() for row in rows if row.get(column) is not None), None
+    )
 
 
-def prevailing_direction(df: pd.DataFrame):
+def most_common(values: list):
+    """Return the most frequent value, the first of them on a tie; None if empty."""
+    counts = Counter(values)
+    return counts.most_common(1)[0][0] if counts else None
+
+
+def prevailing_direction(rows: list[Row]):
     """Return the most common prevailing wind direction; the nearest wins ties."""
-    directions = df["fud"].dropna().map(lambda v: WIND_DIRECTIONS.get(str(v).strip()))
-    directions = directions.dropna()
-    if directions.empty:
-        return None
-    counts = directions.value_counts()
-    most_common = set(counts[counts == counts.max()].index)
-    return next(d for d in directions if d in most_common)
+    return most_common([
+        direction
+        for row in rows
+        if (direction := WIND_DIRECTIONS.get(str(row.get("fud")).strip()))
+    ])
 
 
-def ten_minute_gust_time(df: pd.DataFrame):
+def ten_minute_gust_time(rows: list[Row]):
     """Return the nearest station's maximum gust time as local HH:MM:SS.
 
     The 10-minute file gives the gust's minute of the hour and second, within the
     10 minutes that end at the observation time (UTC). A gust in the period's
     last minute carries the end minute itself, for example 50 for 12:40-12:50.
     """
-    gusts = df.assign(
-        fxm=pd.to_numeric(df["fxm"], errors="coerce"),
-        fxs=pd.to_numeric(df["fxs"], errors="coerce"),
-    ).dropna(subset=["fxm", "fxs"])
-    if gusts.empty:
+    for row in rows:
+        minute, second = to_number(row.get("fxm")), to_number(row.get("fxs"))
+        if minute is not None and second is not None:
+            break
+    else:
         return None
-    row = gusts.iloc[0]
-    # A row of mixed columns turns Time into a float, so convert it back first
     period_end = datetime.strptime(str(int(row["Time"])), "%Y%m%d%H%M").replace(
         tzinfo=dt_util.UTC
     )
-    gust = period_end.replace(minute=int(row["fxm"]) % 60, second=int(row["fxs"]))
+    gust = period_end.replace(minute=int(minute) % 60, second=int(second))
     # Minutes 50-59 in the period ending on the hour belong to the previous hour
     if gust > period_end + timedelta(minutes=1):
         gust -= timedelta(hours=1)
@@ -257,8 +369,7 @@ def haversine(lat1, lon1, lat2, lon2):
 
 def process_daily_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, location=None):
     """Return the daily feed's averages over the nearby stations, and the stations."""
-    df = fetch_data(URL_DAILY)
-    df = clean_data(df)
+    rows = clean_data(fetch_data(URL_DAILY))
     columns = [
         "Time",
         "StationNumber",
@@ -292,12 +403,11 @@ def process_daily_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, location=None
         "fxdat",
         "tviz",
     ]
-    df = df.reindex(columns=columns)
-    df = latest_observations(df)
+    rows = latest_observations(pick_columns(rows, columns))
 
     ref_lat, ref_lon = _get_reference_coords(hass, location)
 
-    df = select_stations(df, ref_lat, ref_lon, distance_km)
+    rows = select_stations(rows, ref_lat, ref_lon, distance_km)
 
     numeric_columns = [
         "Latitude",
@@ -327,31 +437,23 @@ def process_daily_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, location=None
         "fxd",
         "tviz",
     ]
-    means = calculate_mean_values(df, numeric_columns)
-    means["water_balance"] = (
-        means["rau"] - means["upe"]
-        if means["rau"] is not None and means["upe"] is not None
-        else None
-    )
-    means["sr_mj"] = means["sr"] * 0.01 if means["sr"] is not None else None
-    numeric_columns.append("water_balance")
-    numeric_columns.append("sr_mj")
+    means = calculate_mean_values(rows, numeric_columns)
 
-    date_iso = datetime.strptime(str(df["Time"].iloc[0]), "%Y%m%d").date().isoformat()
-    station_info_list = station_records(df)
+    date_str = str(rows[0]["Time"])
+    date_iso = datetime.strptime(date_str, "%Y%m%d").date().isoformat()
+    station_info_list = station_records(rows)
     result = {
         "time": date_iso,
         **{f"average_{col}": means[col] for col in numeric_columns},
-        "fud": prevailing_direction(df),
-        "fxdat": nearest_value(df, "fxdat"),
+        "fud": prevailing_direction(rows),
+        "fxdat": nearest_value(rows, "fxdat"),
     }
     return result, station_info_list
 
 
 def process_hourly_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, location=None):
     """Return the hourly feed's averages over the nearby stations, and the stations."""
-    df = fetch_data(URL_HOURLY)
-    df = clean_data(df)
+    rows = clean_data(fetch_data(URL_HOURLY))
     columns = [
         "Time",
         "StationNumber",
@@ -387,12 +489,11 @@ def process_hourly_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, location=Non
         "p0",
         "fxdat",
     ]
-    df = df.reindex(columns=columns)
-    df = latest_observations(df)
+    rows = latest_observations(pick_columns(rows, columns))
 
     ref_lat, ref_lon = _get_reference_coords(hass, location)
 
-    df = select_stations(df, ref_lat, ref_lon, distance_km)
+    rows = select_stations(rows, ref_lat, ref_lon, distance_km)
 
     numeric_columns = [
         "Latitude",
@@ -425,31 +526,24 @@ def process_hourly_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, location=Non
         "p",
         "p0",
     ]
-    means = calculate_mean_values(df, numeric_columns)
-    means["sr_mj"] = means["sr"] * 0.01 if means["sr"] is not None else None
-    numeric_columns.append("sr_mj")
+    means = calculate_mean_values(rows, numeric_columns)
 
-    date_str = str(df["Time"].head(1).iloc[0])
+    date_str = str(rows[0]["Time"])
     dt_utc = datetime.strptime(date_str, "%Y%m%d%H%M").replace(tzinfo=dt_util.UTC)
-    station_info_list = station_records(df)
-    we_value = None
-    if not df.empty and "we" in df.columns:
-        we_counts = df["we"].value_counts(dropna=True)
-        if not we_counts.empty:
-            we_value = we_counts.idxmax()
+    station_info_list = station_records(rows)
+    we_value = most_common([row["we"] for row in rows if row["we"] is not None])
     result = {
         "time": dt_utc.isoformat(),
         **{f"average_{col}": means[col] for col in numeric_columns},
         "we": we_value,
-        "fxdat": nearest_value(df, "fxdat"),
+        "fxdat": nearest_value(rows, "fxdat"),
     }
     return result, station_info_list
 
 
 def process_ten_minutes_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, location=None):
     """Return the 10-minute feed's averages over the nearby stations, and the stations."""
-    df = fetch_data(URL_TEN_MINUTES)
-    df = clean_data(df)
+    rows = clean_data(fetch_data(URL_TEN_MINUTES))
     columns = [
         "Time",
         "StationNumber",
@@ -482,12 +576,11 @@ def process_ten_minutes_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, locatio
         "fxm",
         "fxs",
     ]
-    df = df.reindex(columns=columns)
-    df = latest_observations(df)
+    rows = latest_observations(pick_columns(rows, columns))
 
     ref_lat, ref_lon = _get_reference_coords(hass, location)
 
-    df = select_stations(df, ref_lat, ref_lon, distance_km)
+    rows = select_stations(rows, ref_lat, ref_lon, distance_km)
 
     numeric_columns = [
         "Latitude",
@@ -516,18 +609,16 @@ def process_ten_minutes_data(hass=None, distance_km=DEFAULT_DISTANCE_KM, locatio
         "v",
         "p",
     ]
-    means = calculate_mean_values(df, numeric_columns)
-    means["sr_mj"] = means["sr"] * 0.01 if means["sr"] is not None else None
-    numeric_columns.append("sr_mj")
+    means = calculate_mean_values(rows, numeric_columns)
 
-    date_str = str(df["Time"].head(1).iloc[0])
+    date_str = str(rows[0]["Time"])
     dt_utc = datetime.strptime(date_str, "%Y%m%d%H%M").replace(tzinfo=dt_util.UTC)
-    station_info_list = station_records(df)
+    station_info_list = station_records(rows)
 
     result = {
         "time": dt_utc.isoformat(),
         **{f"average_{col}": means[col] for col in numeric_columns},
-        "fxdat": ten_minute_gust_time(df),
+        "fxdat": ten_minute_gust_time(rows),
     }
     return result, station_info_list
 

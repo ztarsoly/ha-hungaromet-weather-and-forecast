@@ -11,37 +11,38 @@ import pytest
 from homeassistant.components.sensor import SensorDeviceClass
 
 from custom_components.hungaromet_weather_and_forecast.device_classes import WIND_DIRECTION
-from custom_components.hungaromet_weather_and_forecast.national_radar import HungarometRadarImage
-from custom_components.hungaromet_weather_and_forecast.scope import EntryScope
-from custom_components.hungaromet_weather_and_forecast.station_sensor import (
-    FEEDS,
-    MEASUREMENTS,
-    FeedSensor,
-    Measurement,
-    StationQuery,
+from custom_components.hungaromet_weather_and_forecast.image import HungarometRadarImage
+from custom_components.hungaromet_weather_and_forecast.sensor import (
     StationSensor,
     StationsSensor,
+)
+from custom_components.hungaromet_weather_and_forecast.stations import (
+    FEEDS,
+    MEASUREMENTS,
+    Measurement,
+    StationQuery,
     reading,
 )
+from custom_components.hungaromet_weather_and_forecast.scope import EntryScope
 from custom_components.hungaromet_weather_and_forecast.weather_data import (
     process_daily_data,
     process_hourly_data,
     process_ten_minutes_data,
 )
 
+from .entries import feed_coordinator, loaded_entry
+
 QUERY = StationQuery(distance_km=35, location=(47.5, 21.6))
 
 
-def _sensor(feed="hourly", key="t", value=1.234, unit="°C", hass=None, name="X"):
-    return StationSensor(
-        hass or SimpleNamespace(), FEEDS[feed], Measurement(name, key, unit), value, QUERY
-    )
+def _sensor(feed="hourly", key="t", value=1.234, unit="°C", name="X"):
+    coordinator = feed_coordinator(feed, QUERY, ({key: value}, []))
+    return StationSensor(coordinator, Measurement(name, key, unit))
 
 
-def _added(entity):
-    entity._added = True
-    entity.async_write_ha_state = MagicMock()
-    return entity
+def _download(sensor, value):
+    """Give a sensor's feed a new download with this value of its measurement."""
+    sensor.coordinator.data = ({sensor._measurement.key: value}, [])
 
 
 class DummyBus:
@@ -68,7 +69,7 @@ def test_feeds_and_their_devices():
         "hourly": process_hourly_data,
         "ten_minutes": process_ten_minutes_data,
     }
-    assert [len(MEASUREMENTS[key]) for key in FEEDS] == [28, 29, 25]
+    assert [len(MEASUREMENTS[key]) for key in FEEDS] == [26, 28, 24]
 
 
 @pytest.mark.parametrize(
@@ -114,10 +115,13 @@ def test_value_sensor_values():
     assert sensor.native_unit_of_measurement == "°C"
     assert sensor.device_class == SensorDeviceClass.TEMPERATURE
     assert sensor.options is None
-    sensor._value = None
+    _download(sensor, None)
     assert sensor.native_value is None
-    sensor._value = "text"
+    _download(sensor, "text")
     assert sensor.native_value == "text"
+    # Nothing downloaded yet
+    sensor.coordinator.data = None
+    assert sensor.native_value is None
     # A sensor of an "average_" key is named after the measurement
     assert _sensor(key="average_upe", unit="mm").translation_key == "hourly_upe"
 
@@ -137,11 +141,11 @@ def test_measurement_times(feed, value, expected, caplog):
         SensorDeviceClass.DATE if feed == "daily" else SensorDeviceClass.TIMESTAMP
     )
     assert sensor.native_value == expected
-    sensor._value = "bad"
+    _download(sensor, "bad")
     assert sensor.native_value is None
     assert not sensor.available
     assert caplog.text.count(f"Reading the {feed} measurement time failed") == 1
-    sensor._value = value
+    _download(sensor, value)
     assert sensor.native_value == expected
     assert f"Reading the {feed} measurement time works again" in caplog.text
 
@@ -159,7 +163,7 @@ def test_prevailing_wind_direction_is_an_enum():
     [
         ("et50", "°C", SensorDeviceClass.TEMPERATURE),
         ("rau", "mm", SensorDeviceClass.PRECIPITATION),
-        ("average_water_balance", "mm", SensorDeviceClass.PRECIPITATION),
+        ("average_upe", "mm", SensorDeviceClass.PRECIPITATION),
         ("u", "%", SensorDeviceClass.HUMIDITY),
         ("p", "hPa", SensorDeviceClass.PRESSURE),
         ("p0", "hPa", SensorDeviceClass.ATMOSPHERIC_PRESSURE),
@@ -167,6 +171,8 @@ def test_prevailing_wind_direction_is_an_enum():
         ("fxd", "°", WIND_DIRECTION),
         ("v", "m", SensorDeviceClass.DISTANCE),
         ("sr", "J/cm²", None),
+        ("sr", "W/m²", SensorDeviceClass.IRRADIANCE),
+        ("suv", "MED/h", None),
         ("sg", "nSv/h", None),
     ],
 )
@@ -174,6 +180,19 @@ def test_station_sensor_device_classes(key, unit, device_class):
     """Test station sensor device classes."""
     for feed in FEEDS:
         assert _sensor(feed, key, 1.0, unit).device_class == device_class
+
+
+def test_only_the_ten_minute_radiation_values_are_rates():
+    """The daily and hourly radiation values are sums, the 10-minute ones rates."""
+    units = {
+        feed: [m.unit for m in MEASUREMENTS[feed] if m.key in ("sr", "suv")]
+        for feed in FEEDS
+    }
+    assert units == {
+        "daily": ["J/cm²", "MED"],
+        "hourly": ["J/cm²", "MED"],
+        "ten_minutes": ["W/m²", "MED/h"],
+    }
 
 
 def test_numeric_station_sensors_show_one_decimal():
@@ -203,7 +222,8 @@ def test_stations_sensor():
             "Distance_km": 2.0,
         }
     ]
-    sensor = StationsSensor(None, FEEDS["hourly"], rows, StationQuery(scope=EntryScope("e1", "P")))
+    query = StationQuery(scope=EntryScope("e1", "P"))
+    sensor = StationsSensor(feed_coordinator("hourly", query, ({}, rows)))
     assert sensor.translation_key == "stations"
     assert sensor.unique_id == "e1_hungaromet_weather_station_info_hourly"
     assert sensor.device_info == _sensor().device_info | {
@@ -223,43 +243,9 @@ def test_stations_sensor():
         ],
         "raw_data": rows,
     }
-    sensor._stations = None
+    sensor.coordinator.data = None
     assert sensor.native_value == 0
     assert sensor.extra_state_attributes == {"stations": [], "raw_data": []}
-
-
-async def test_sensors_update_only_once_added():
-    """Test sensors update only once added."""
-    hass = SimpleNamespace(
-        async_add_executor_job=AsyncMock(return_value=({"average_t": 4.5}, ["S"]))
-    )
-    value = _sensor(hass=hass)
-    stations = StationsSensor(hass, FEEDS["hourly"], [], QUERY)
-
-    await value.async_added_to_hass()
-    assert value.added
-    await value.async_will_remove_from_hass()
-    assert not value.added
-    await value.async_update()
-    hass.async_add_executor_job.assert_not_awaited()
-
-    for sensor in (_added(value), _added(stations)):
-        await sensor.async_update()
-        sensor.async_write_ha_state.assert_called_once()
-    assert hass.async_add_executor_job.await_args.args == (
-        process_hourly_data,
-        hass,
-        35,
-        (47.5, 21.6),
-    )
-    assert value.native_value == 4.5
-    assert stations.native_value == 1
-
-
-def test_feed_sensors_must_say_what_they_show():
-    """Test feed sensors must say what they show."""
-    with pytest.raises(NotImplementedError):
-        FeedSensor(None, FEEDS["daily"], QUERY).show({}, [])
 
 
 # National radar image
@@ -268,7 +254,7 @@ def test_feed_sensors_must_say_what_they_show():
 async def test_radar_image_updates_only_when_added():
     """Test radar image updates only when added."""
     hass = _radar_hass(async_add_executor_job=AsyncMock(return_value=("x.png", b"gif data")))
-    image = HungarometRadarImage(hass)
+    image = HungarometRadarImage(hass, loaded_entry())
     image.async_write_ha_state = MagicMock()
     image._frames._gif = b"gif data"
 
@@ -306,7 +292,8 @@ async def test_radar_image_schedules_and_unsubscribes(monkeypatch):
         async_add_executor_job=AsyncMock(return_value=(None, None)),
         async_create_task=lambda coro, name: tasks.append((coro, name)),
     )
-    image = HungarometRadarImage(hass)
+    entry = loaded_entry()
+    image = HungarometRadarImage(hass, entry)
     image.async_write_ha_state = MagicMock()
 
     await image.async_added_to_hass()
@@ -323,7 +310,7 @@ async def test_radar_image_schedules_and_unsubscribes(monkeypatch):
     assert len(retries) == 1
 
     # The update service can rebuild this image too
-    registered = hass.data["hungaromet_weather_and_forecast_updaters"]
+    registered = entry.runtime_data.updaters
     assert registered == {image.unique_id: image.async_update_data}
 
     await image.async_will_remove_from_hass()
@@ -333,7 +320,7 @@ async def test_radar_image_schedules_and_unsubscribes(monkeypatch):
 
 async def test_radar_image_shows_the_last_animation():
     """Test radar image shows the last animation."""
-    image = HungarometRadarImage(_radar_hass())
+    image = HungarometRadarImage(_radar_hass(), loaded_entry())
     assert image.image() is None
     assert await image.async_image() is None
     assert image.available is False
@@ -347,15 +334,11 @@ async def test_radar_image_shows_the_last_animation():
 def test_radar_image_names_and_ids():
     """Test radar image names and ids."""
     hass = _radar_hass()
-    image = HungarometRadarImage(hass)
+    image = HungarometRadarImage(hass, loaded_entry())
 
-    # Its own name, without the device name ("National Radar Image") in front
-    assert image.name == "National radar image"
-    assert image.has_entity_name is False
-    hass.config = SimpleNamespace(language="hu")
-    assert image.name == "Országos radarkép"
-    hass.config.language = "de"  # no German names: English
-    assert image.name == "National radar image"
+    # Named after its device, which the translations name
+    assert image.has_entity_name is True
+    assert image.name is None
     assert image.unique_id == "hungaromet_radar_gif_hungaromet_radar"
     assert image.device_info["model"] == "National radar image"
     assert image.device_info["configuration_url"] == (
@@ -368,7 +351,7 @@ def test_radar_image_names_and_ids():
 
 async def test_radar_update_entity_rebuilds_the_animation():
     """Test radar update entity rebuilds the animation."""
-    image = HungarometRadarImage(_radar_hass())
+    image = HungarometRadarImage(_radar_hass(), loaded_entry())
     image.async_update_data = AsyncMock()
 
     await image.async_update()
@@ -378,7 +361,7 @@ async def test_radar_update_entity_rebuilds_the_animation():
 
 async def test_radar_scheduled_update_reports_freshness(monkeypatch):
     """Test radar scheduled update reports freshness."""
-    image = HungarometRadarImage(_radar_hass())
+    image = HungarometRadarImage(_radar_hass(), loaded_entry())
     frame = "https://x/radar_composite-refl2D_pscappi-20261027_0800.png"
     called = AsyncMock(return_value=frame)
     monkeypatch.setattr(image, "async_update_data", called)

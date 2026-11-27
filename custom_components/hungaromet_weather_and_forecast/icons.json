@@ -28,9 +28,6 @@
       "daily_rau": {
         "default": "mdi:weather-pouring"
       },
-      "daily_water_balance": {
-        "default": "mdi:scale-balance"
-      },
       "daily_t": {
         "default": "mdi:thermometer"
       },
@@ -41,9 +38,6 @@
         "default": "mdi:thermometer-high"
       },
       "daily_sr": {
-        "default": "mdi:weather-sunny"
-      },
-      "daily_sr_mj": {
         "default": "mdi:weather-sunny"
       },
       "daily_tsn24": {
@@ -130,9 +124,6 @@
       "hourly_sr": {
         "default": "mdi:weather-sunny"
       },
-      "hourly_sr_mj": {
-        "default": "mdi:weather-sunny"
-      },
       "hourly_suv": {
         "default": "mdi:sun-wireless"
       },
@@ -215,9 +206,6 @@
         "default": "mdi:radioactive"
       },
       "ten_minutes_sr": {
-        "default": "mdi:weather-sunny"
-      },
-      "ten_minutes_sr_mj": {
         "default": "mdi:weather-sunny"
       },
       "ten_minutes_suv": {

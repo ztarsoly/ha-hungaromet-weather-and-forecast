@@ -8,23 +8,33 @@
           "name": "Name",
           "distance_km": "Station search radius (km)",
           "forecast_settlement": "Forecast settlement (optional)",
-          "location": "Weather sensor location"
+          "location": "Location",
+          "devices": "Services",
+          "national_radar": "National radar image"
         },
         "data_description": {
-          "name": "The name of this entry and its devices (e.g. Home).",
-          "distance_km": "Sensors show the average of all HungaroMet stations within the search radius of the selected location. If no station is in range, the nearest one is used.",
-          "forecast_settlement": "Hungarian settlement for the HungaroMet Forecast device, e.g. Debrecen. Use accented letters. Leave empty for no forecast.",
-          "location": "Where the station search radius is measured from: Home Assistant's home location, or the forecast settlement."
+          "name": "The name of this entry and its services (e.g. Home).",
+          "distance_km": "Sensors show the average of all HungaroMet stations with data within the search radius of the selected location. If no station with data is in range, the nearest one with data is used.",
+          "forecast_settlement": "Hungarian settlement for the HungaroMet Forecast service, e.g. Debrecen. Use accented letters. Leave empty for no forecast.",
+          "location": "Where the station search radius is measured from, and which regional radar image is shown: Home Assistant's home location, or the forecast settlement.",
+          "devices": "The weather station services and the regional radar image of this entry. Only the ticked ones are downloaded and added.",
+          "national_radar": "Adds the national radar image, as a separate Radar entry. To add only the radar, leave the name and the settlement empty and untick every service."
         }
       }
     },
     "error": {
       "settlement_not_found": "met.hu does not know this settlement. Check the spelling, including accents (é, á, ő …).",
       "cannot_connect": "Could not reach met.hu. Try again later.",
-      "settlement_required": "Enter a forecast settlement to use it as the location."
+      "settlement_required": "Enter a forecast settlement to use it as the location.",
+      "name_required": "Enter a name.",
+      "invalid_response": "met.hu sent an unexpected answer. Try again later.",
+      "settlement_in_use": "Another entry already has this forecast settlement.",
+      "home_in_use": "Another entry already measures at Home. For this one, enter a forecast settlement and choose it as the location.",
+      "nothing_selected": "Tick at least one service, or enter a forecast settlement.",
+      "nothing_or_radar": "Tick at least one service, or enter a forecast settlement. To add only the radar, leave the name empty too and keep National radar image ticked."
     },
     "abort": {
-      "already_configured": "The national radar entry already exists."
+      "already_configured": "An entry with this forecast settlement and location already exists."
     }
   },
   "options": {
@@ -35,13 +45,15 @@
           "name": "Name",
           "distance_km": "Station search radius (km)",
           "forecast_settlement": "Forecast settlement (optional)",
-          "location": "Weather sensor location"
+          "location": "Location",
+          "devices": "Services"
         },
         "data_description": {
-          "name": "The name of this entry; device names that contain it are renamed too.",
-          "distance_km": "Sensors show the average of all HungaroMet stations within the search radius of the selected location. If no station is in range, the nearest one is used.",
-          "forecast_settlement": "Hungarian settlement for the HungaroMet Forecast device, e.g. Debrecen. Use accented letters. Leave empty for no forecast.",
-          "location": "Where the station search radius is measured from: Home Assistant's home location, or the forecast settlement."
+          "name": "The name of this entry; service names that contain it are renamed too.",
+          "distance_km": "Sensors show the average of all HungaroMet stations with data within the search radius of the selected location. If no station with data is in range, the nearest one with data is used.",
+          "forecast_settlement": "Hungarian settlement for the HungaroMet Forecast service, e.g. Debrecen. Use accented letters. Leave empty for no forecast. Emptying it removes the Forecast service and its entities.",
+          "location": "Where the station search radius is measured from, and which regional radar image is shown: Home Assistant's home location, or the forecast settlement.",
+          "devices": "The weather station services and the regional radar image of this entry. Unticking one removes its service and entities."
         }
       }
     },
@@ -49,7 +61,16 @@
       "settlement_not_found": "met.hu does not know this settlement. Check the spelling, including accents (é, á, ő …).",
       "cannot_connect": "Could not reach met.hu. Try again later.",
       "settlement_required": "Enter a forecast settlement to use it as the location.",
-      "name_required": "Enter a name."
+      "invalid_response": "met.hu sent an unexpected answer. Try again later.",
+      "name_required": "Enter a name.",
+      "settlement_in_use": "Another entry already has this forecast settlement.",
+      "home_in_use": "Another entry already measures at Home. For this one, enter a forecast settlement and choose it as the location.",
+      "nothing_selected": "Tick at least one service, or enter a forecast settlement."
+    }
+  },
+  "exceptions": {
+    "no_loaded_entry": {
+      "message": "No HungaroMet entry is loaded, so there is nothing to update."
     }
   },
   "selector": {
@@ -57,6 +78,14 @@
       "options": {
         "home": "Home",
         "settlement": "Forecast settlement"
+      }
+    },
+    "devices": {
+      "options": {
+        "daily": "Daily weather",
+        "hourly": "Hourly weather",
+        "ten_minutes": "10-minute weather",
+        "regional_radar": "Regional radar image"
       }
     }
   },
@@ -86,19 +115,19 @@
         "name": "Stations"
       },
       "daily_et5": {
-        "name": "Mean soil temperature at 5 cm"
+        "name": "Soil temperature at 5 cm"
       },
       "daily_et10": {
-        "name": "Mean soil temperature at 10 cm"
+        "name": "Soil temperature at 10 cm"
       },
       "daily_et20": {
-        "name": "Mean soil temperature at 20 cm"
+        "name": "Soil temperature at 20 cm"
       },
       "daily_et50": {
-        "name": "Mean soil temperature at 50 cm"
+        "name": "Soil temperature at 50 cm"
       },
       "daily_et100": {
-        "name": "Mean soil temperature at 100 cm"
+        "name": "Soil temperature at 100 cm"
       },
       "daily_time": {
         "name": "Measurement time"
@@ -108,9 +137,6 @@
       },
       "daily_rau": {
         "name": "Precipitation"
-      },
-      "daily_water_balance": {
-        "name": "Water balance"
       },
       "daily_t": {
         "name": "Mean temperature"
@@ -122,37 +148,34 @@
         "name": "Maximum temperature"
       },
       "daily_sr": {
-        "name": "Global radiation"
-      },
-      "daily_sr_mj": {
-        "name": "Global radiation (MJ/m²)"
+        "name": "Total global radiation"
       },
       "daily_tsn24": {
         "name": "Near-surface minimum temperature"
       },
       "daily_v": {
-        "name": "Mean visibility"
+        "name": "Visibility"
       },
       "daily_p": {
-        "name": "Mean station pressure"
+        "name": "Station pressure"
       },
       "daily_p0": {
-        "name": "Mean sea-level pressure"
+        "name": "Sea-level pressure"
       },
       "daily_u": {
-        "name": "Mean relative humidity"
+        "name": "Relative humidity"
       },
       "daily_sg": {
-        "name": "Mean gamma dose rate"
+        "name": "Gamma dose rate"
       },
       "daily_suv": {
         "name": "UV radiation"
       },
       "daily_fs": {
-        "name": "Mean synoptic wind speed"
+        "name": "Synoptic wind speed"
       },
       "daily_f": {
-        "name": "Mean wind speed"
+        "name": "Wind speed"
       },
       "daily_fx": {
         "name": "Maximum wind gust speed"
@@ -185,7 +208,7 @@
         }
       },
       "daily_tviz": {
-        "name": "Mean water temperature"
+        "name": "Water temperature"
       },
       "hourly_et5": {
         "name": "Soil temperature at 5 cm"
@@ -209,7 +232,7 @@
         "name": "Precipitation"
       },
       "hourly_t": {
-        "name": "Temperature"
+        "name": "Current temperature"
       },
       "hourly_ta": {
         "name": "Mean temperature"
@@ -224,13 +247,10 @@
         "name": "Relative humidity"
       },
       "hourly_sg": {
-        "name": "Mean gamma dose rate"
+        "name": "Gamma dose rate"
       },
       "hourly_sr": {
-        "name": "Global radiation"
-      },
-      "hourly_sr_mj": {
-        "name": "Global radiation (MJ/m²)"
+        "name": "Total global radiation"
       },
       "hourly_suv": {
         "name": "UV radiation"
@@ -254,10 +274,10 @@
         "name": "Synoptic wind bearing"
       },
       "hourly_f": {
-        "name": "Mean wind speed"
+        "name": "Wind speed"
       },
       "hourly_fd": {
-        "name": "Mean wind bearing"
+        "name": "Wind bearing"
       },
       "hourly_we": {
         "name": "Weather code"
@@ -296,7 +316,7 @@
         "name": "Precipitation"
       },
       "ten_minutes_t": {
-        "name": "Temperature"
+        "name": "Current temperature"
       },
       "ten_minutes_ta": {
         "name": "Mean temperature"
@@ -311,13 +331,10 @@
         "name": "Relative humidity"
       },
       "ten_minutes_sg": {
-        "name": "Mean gamma dose rate"
+        "name": "Gamma dose rate"
       },
       "ten_minutes_sr": {
         "name": "Global radiation"
-      },
-      "ten_minutes_sr_mj": {
-        "name": "Global radiation (MJ/m²)"
       },
       "ten_minutes_suv": {
         "name": "UV radiation"
@@ -335,10 +352,10 @@
         "name": "Water temperature"
       },
       "ten_minutes_fs": {
-        "name": "Mean wind speed"
+        "name": "Wind speed"
       },
       "ten_minutes_fsd": {
-        "name": "Mean wind bearing"
+        "name": "Wind bearing"
       },
       "ten_minutes_v": {
         "name": "Visibility"

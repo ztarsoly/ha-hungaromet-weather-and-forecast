@@ -11,7 +11,10 @@ import aiohttp
 import pytest
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.hungaromet_weather_and_forecast import warning, warning_scraper
+from custom_components.hungaromet_weather_and_forecast import (
+    coordinator as coordinators,
+    warning_scraper,
+)
 from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     HUNGARY_TZ,
     Settlement,
@@ -30,10 +33,11 @@ from custom_components.hungaromet_weather_and_forecast.warning_scraper import (
     parse_snippet,
     today_warning_map,
 )
-from custom_components.hungaromet_weather_and_forecast.warning_sensor import (
+from custom_components.hungaromet_weather_and_forecast.sensor import (
     WARNING_SENSORS,
     warning_sensors,
 )
+from custom_components.hungaromet_weather_and_forecast.data import HungaroMetData
 
 DEBRECEN = Settlement(name="Debrecen", kod="725", lat=47.543, lon=21.648)
 
@@ -252,7 +256,7 @@ async def test_fetch_warnings_for_today_in_hungary():
 
 
 def _coordinator():
-    coordinator = object.__new__(warning.WarningCoordinator)
+    coordinator = object.__new__(coordinators.WarningCoordinator)
     coordinator.settlement = DEBRECEN
     coordinator.district = None
     coordinator.hass = MagicMock()
@@ -265,8 +269,8 @@ async def test_coordinator_finds_the_district_once():
     coordinator = _coordinator()
     data = Warnings()
     with (
-        patch.object(warning, "async_get_clientsession") as session,
-        patch.object(warning, "fetch_warnings", AsyncMock(return_value=data)) as fetch,
+        patch.object(coordinators, "async_get_clientsession") as session,
+        patch.object(coordinators, "fetch_warnings", AsyncMock(return_value=data)) as fetch,
     ):
         assert await coordinator._async_update_data() is data
         assert await coordinator._async_update_data() is data
@@ -279,10 +283,10 @@ async def test_coordinator_finds_the_district_once():
 
 def test_store_is_per_entry():
     """Test store is per entry."""
-    with patch.object(warning, "Store") as store:
-        warning.warning_store("hass", "e1")
+    with patch.object(coordinators, "Store") as store:
+        coordinators.warning_store("hass", "e1")
     store.assert_called_once_with(
-        "hass", warning.STORAGE_VERSION, "hungaromet_weather_and_forecast.warnings.e1"
+        "hass", coordinators.STORAGE_VERSION, "hungaromet_weather_and_forecast.warnings.e1"
     )
 
 
@@ -291,8 +295,8 @@ async def test_coordinator_update_failure(error):
     """Test coordinator update failure."""
     coordinator = _coordinator()
     with (
-        patch.object(warning, "async_get_clientsession"),
-        patch.object(warning, "fetch_warnings", AsyncMock(side_effect=error)),
+        patch.object(coordinators, "async_get_clientsession"),
+        patch.object(coordinators, "fetch_warnings", AsyncMock(side_effect=error)),
         pytest.raises(UpdateFailed, match="^(x|TimeoutError)$"),
     ):
         await coordinator._async_update_data()
@@ -302,10 +306,10 @@ def test_coordinator_init():
     """Test coordinator init."""
     entry = MagicMock(entry_id="e1")
     with (
-        patch.object(warning.ScheduledCoordinator, "__init__", return_value=None) as init,
-        patch.object(warning, "RetryingSchedule") as cls,
+        patch.object(coordinators.ScheduledCoordinator, "__init__", return_value=None) as init,
+        patch.object(coordinators, "RetryingSchedule") as cls,
     ):
-        coordinator = warning.WarningCoordinator("hass", entry, DEBRECEN)
+        coordinator = coordinators.WarningCoordinator("hass", entry, DEBRECEN)
 
     assert init.call_args.kwargs["update_interval"] is None
     assert init.call_args.kwargs["config_entry"] is entry
@@ -316,24 +320,24 @@ def test_coordinator_init():
     assert args[1:] == (
         "warnings",
         coordinator._async_scheduled_download,
-        warning.WARNING_RETRY_DELAY,
+        coordinators.WARNING_RETRY_DELAY,
     )
-    assert warning.WARNING_RETRY_DELAY.total_seconds() == 600
+    assert coordinators.WARNING_RETRY_DELAY.total_seconds() == 600
     assert kwargs == {"config_entry": entry, "minute": 0, "second": 59}
     assert coordinator.schedule is cls.return_value
 
 
 async def test_setup_schedules_and_registers_the_update():
     """Test setup schedules and registers the update."""
-    entry = MagicMock(entry_id="e1")
-    hass = MagicMock(data={})
+    entry = MagicMock(entry_id="e1", runtime_data=HungaroMetData(name="HungaroMet"))
+    hass = MagicMock()
     coordinator = MagicMock()
     saved = MagicMock(async_remove=AsyncMock())
     with (
-        patch.object(warning, "WarningCoordinator", return_value=coordinator) as cls,
-        patch.object(warning, "warning_store", return_value=saved) as store,
+        patch.object(coordinators, "WarningCoordinator", return_value=coordinator) as cls,
+        patch.object(coordinators, "warning_store", return_value=saved) as store,
     ):
-        assert await warning.async_setup_warnings(hass, entry, DEBRECEN) is coordinator
+        assert await coordinators.async_setup_warnings(hass, entry, DEBRECEN) is coordinator
 
     # The file earlier versions saved is deleted
     store.assert_called_once_with(hass, "e1")
@@ -342,7 +346,7 @@ async def test_setup_schedules_and_registers_the_update():
     cls.assert_called_once_with(hass, entry, DEBRECEN)
     unloads = [c.args[0] for c in entry.async_on_unload.call_args_list]
     assert unloads[0] is coordinator.schedule.start.return_value
-    registered = hass.data["hungaromet_weather_and_forecast_updaters"]
+    registered = entry.runtime_data.updaters
     assert registered == {"e1_warnings": coordinator.async_update_now}
     unloads[1]()
     assert registered == {}

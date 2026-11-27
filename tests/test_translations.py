@@ -4,35 +4,33 @@ import json
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import pandas as pd
 import pytest
 from PIL import Image
 
 from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     WIND_STRENGTH_STATES,
 )
-from custom_components.hungaromet_weather_and_forecast.forecast_sensor import (
+from custom_components.hungaromet_weather_and_forecast.sensor import (
     FORECAST_SENSORS,
+    WARNING_SENSORS,
+    StationSensor,
+    StationsSensor,
+)
+from custom_components.hungaromet_weather_and_forecast.stations import (
+    MEASUREMENTS as STATION_MEASUREMENTS,
+    Measurement,
 )
 from custom_components.hungaromet_weather_and_forecast.warning_scraper import (
     LEVEL_STATES,
-)
-from custom_components.hungaromet_weather_and_forecast.warning_sensor import (
-    WARNING_SENSORS,
-)
-from custom_components.hungaromet_weather_and_forecast.station_sensor import (
-    FEEDS,
-    MEASUREMENTS as STATION_MEASUREMENTS,
-    Measurement,
-    StationQuery,
-    StationSensor,
-    StationsSensor,
 )
 from custom_components.hungaromet_weather_and_forecast.weather_data import (
     process_daily_data,
     process_hourly_data,
     process_ten_minutes_data,
 )
+
+from .entries import feed_coordinator
+from .rows import table
 
 TRANSLATIONS = Path(__file__).resolve().parents[1] / (
     "custom_components/hungaromet_weather_and_forecast/translations"
@@ -59,9 +57,9 @@ def _key_paths(data, prefix=""):
     return paths
 
 
-def _all_stations_df():
-    return pd.DataFrame({
-        "Time": [202401011200],
+def _all_stations_rows(time):
+    return table({
+        "Time": [time],
         "StationNumber": [1],
         "StationName": ["A"],
         "Latitude": [47.5],
@@ -92,7 +90,7 @@ def test_only_created_sensors_are_translated():
     created = {"stations"} | {
         d.translation_key for d in (*FORECAST_SENSORS, *WARNING_SENSORS)
     } | {
-        StationSensor(Mock(), FEEDS[feed], m, None, StationQuery()).translation_key
+        StationSensor(feed_coordinator(feed), m).translation_key
         for feed, measurements in STATION_MEASUREMENTS.items()
         for m in measurements
     }
@@ -115,29 +113,36 @@ def test_languages_have_the_same_keys():
 )
 def test_every_sensor_key_is_translated(language, process, feed):
     """Each value a feed's sensors show has a translated sensor name."""
-    df = _all_stations_df()
-    if process is process_daily_data:
-        df["Time"] = [20240101]
+    rows = _all_stations_rows(
+        20240101 if process is process_daily_data else 202401011200
+    )
     hass = Mock()
     hass.config.latitude = 47.5
     hass.config.longitude = 19.0
     with patch(
-        "custom_components.hungaromet_weather_and_forecast.weather_data.fetch_data", return_value=df
+        "custom_components.hungaromet_weather_and_forecast.weather_data.fetch_data",
+        return_value=rows,
     ):
         data, _ = process(hass, distance_km=20)
 
     names = _load(language)["entity"]["sensor"]
     device = _load(language)["device"]
     for key in data.keys() & {m.key for m in STATION_MEASUREMENTS[feed]}:
-        sensor = StationSensor(hass, FEEDS[feed], Measurement(key, key), None, StationQuery())
+        sensor = StationSensor(feed_coordinator(feed), Measurement(key, key))
         assert sensor.translation_key in names, sensor.translation_key
         assert sensor.device_info["translation_key"] in device
 
 
 @pytest.mark.parametrize("language", LANGUAGES)
+def test_the_update_actions_error_is_translated(language):
+    """The error of an update with nothing loaded has a message."""
+    assert _load(language)["exceptions"]["no_loaded_entry"]["message"]
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
 def test_station_info_sensor_is_translated(language):
     """The station list sensor and its device are translated."""
-    sensor = StationsSensor(Mock(), FEEDS["daily"], [], StationQuery())
+    sensor = StationsSensor(feed_coordinator("daily"))
     translations = _load(language)
 
     assert sensor.translation_key in translations["entity"]["sensor"]

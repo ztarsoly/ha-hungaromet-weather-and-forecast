@@ -3,12 +3,14 @@
 # The tests check the integration's internals
 # pylint: disable=protected-access
 
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from custom_components.hungaromet_weather_and_forecast import forecast
+from custom_components.hungaromet_weather_and_forecast.failures import FailureLog
+from custom_components.hungaromet_weather_and_forecast import coordinator as coordinators
 from custom_components.hungaromet_weather_and_forecast import weather as w
 from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     HUNGARY_TZ,
@@ -321,10 +323,12 @@ def test_ended_period_is_not_kept():
 async def test_coordinator_keeps_the_dropped_row():
     """Test coordinator keeps the dropped row."""
     now = datetime(2026, 10, 28, 17, 22, tzinfo=HUNGARY_TZ)
-    coordinator = object.__new__(forecast.ForecastCoordinator)
+    coordinator = object.__new__(coordinators.ForecastCoordinator)
     coordinator.hass = MagicMock()
     coordinator.settlement = MagicMock()
     coordinator._store = MagicMock(async_save=AsyncMock())
+    coordinator._save_lock = asyncio.Lock()
+    coordinator._failure_log = FailureLog(MagicMock(), "Forecast")
     coordinator._saved = None
     coordinator.last_update_success = True
     coordinator.data = _download(
@@ -332,9 +336,9 @@ async def test_coordinator_keeps_the_dropped_row():
     )
     new = _download(_at(28, 19, temperature=10), _at(29, 1, temperature=8), now=now)
     with (
-        patch.object(forecast, "async_get_clientsession"),
-        patch.object(forecast, "fetch_forecast", AsyncMock(return_value=new)),
-        patch.object(forecast.dt_util, "now", return_value=now),
+        patch.object(coordinators, "async_get_clientsession"),
+        patch.object(coordinators, "fetch_forecast", AsyncMock(return_value=new)),
+        patch.object(coordinators.dt_util, "now", return_value=now),
     ):
         data = await coordinator._async_update_data()
 
@@ -461,10 +465,12 @@ def test_without_a_recorded_hour_before_now_only_the_older_hours_are_recorded():
 
 async def test_coordinator_continues_from_the_recorded_values():
     """Test coordinator continues from the recorded values."""
-    coordinator = object.__new__(forecast.ForecastCoordinator)
+    coordinator = object.__new__(coordinators.ForecastCoordinator)
     coordinator.hass = MagicMock()
     coordinator.settlement = MagicMock()
     coordinator._store = MagicMock(async_save=AsyncMock())
+    coordinator._save_lock = asyncio.Lock()
+    coordinator._failure_log = FailureLog(MagicMock(), "Forecast")
     coordinator._saved = None
     coordinator.last_update_success = True
     coordinator.data = _night_before()
@@ -472,9 +478,9 @@ async def test_coordinator_continues_from_the_recorded_values():
         _at(28, 1, temperature=6.0), _at(28, 7, temperature=0.0), now=AFTER
     )
     with (
-        patch.object(forecast, "async_get_clientsession"),
-        patch.object(forecast, "fetch_forecast", AsyncMock(return_value=new)),
-        patch.object(forecast.dt_util, "now", return_value=AFTER),
+        patch.object(coordinators, "async_get_clientsession"),
+        patch.object(coordinators, "fetch_forecast", AsyncMock(return_value=new)),
+        patch.object(coordinators.dt_util, "now", return_value=AFTER),
     ):
         data = await coordinator._async_update_data()
 

@@ -8,12 +8,16 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
-from custom_components.hungaromet_weather_and_forecast import failures, scheduler
+from custom_components.hungaromet_weather_and_forecast import (
+    coordinator as coordinators,
+    failures,
+    scheduler,
+)
 
 _LOGGER = logging.getLogger("hungaromet_test")
 
 
-class _Coordinator(scheduler.ScheduledCoordinator[str]):
+class _Coordinator(coordinators.ScheduledCoordinator[str]):
     """A coordinator returning or raising what it is told to."""
 
     results: list
@@ -71,12 +75,77 @@ async def test_an_unexpected_error_is_logged_with_its_traceback(caplog):
     assert unexpected.exc_info
 
 
+async def test_logs_of_a_name_share_the_records(caplog):
+    """Test a new log of the same download does not repeat the warning."""
+    caplog.set_level(logging.INFO)
+    records = failures.FailureRecords()
+    failures.FailureLog(_LOGGER, "Forecast", records).failed("down")
+
+    again = failures.FailureLog(_LOGGER, "Forecast", records)
+    again.failed("still down")
+    again.succeeded()
+    # A log without records starts anew
+    failures.FailureLog(_LOGGER, "Radar").failed("down")
+    failures.FailureLog(_LOGGER, "Radar").failed("down")
+
+    assert [r.getMessage() for r in caplog.records] == [
+        "Forecast failed: down",
+        "Forecast works again",
+        "Radar failed: down",
+        "Radar failed: down",
+    ]
+
+
+async def test_closed_records_log_nothing(caplog):
+    """A download finishing after its entry has unloaded is not logged."""
+    caplog.set_level(logging.INFO)
+    records = failures.FailureRecords()
+    radar = failures.FailureLog(_LOGGER, "Radar", records)
+    radar.failed("offline")
+    records.closed = True
+
+    radar.succeeded()
+    failures.FailureLog(_LOGGER, "Forecast", records).failed("timeout")
+    records.warn_once(_LOGGER, "Unknown %r", "a")
+
+    assert [r.getMessage() for r in caplog.records] == ["Radar failed: offline"]
+
+
+async def test_held_warnings_wait_for_the_release(caplog):
+    """While held, warnings are debug messages; the release logs them."""
+    caplog.set_level(logging.DEBUG)
+    records = failures.FailureRecords()
+    records.hold()
+    radar = failures.FailureLog(_LOGGER, "Radar", records)
+    error = ValueError("broken")
+
+    radar.failed(error, exc_info=error)
+    radar.failed("still broken")
+    records.warn_once(_LOGGER, "Unknown %r", "a")
+
+    assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
+        ("DEBUG", "Radar failed: broken"),
+        ("DEBUG", "Unknown 'a'"),
+    ]
+
+    caplog.clear()
+    records.release()
+    radar.succeeded()
+
+    assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
+        ("WARNING", "Radar failed: broken"),
+        ("WARNING", "Unknown 'a'"),
+        ("WARNING", "Radar works again"),
+    ]
+    assert caplog.records[0].exc_info[1] is error
+
+
 async def test_warn_once(caplog):
     """Test a warning is logged once for each set of arguments."""
-    failures._WARNED.clear()
+    records = failures.FailureRecords()
 
     for value in ("a", "a", "b"):
-        failures.warn_once(_LOGGER, "Unknown %r", value)
+        records.warn_once(_LOGGER, "Unknown %r", value)
 
     assert [r.getMessage() for r in caplog.records] == [
         "Unknown 'a'",
@@ -102,6 +171,7 @@ async def test_retries_every_minute_until_the_first_download():
         assert call_later.call_count == 2
 
     assert coordinator.data == "data"
+    assert coordinator.downloaded is True
 
 
 async def test_no_extra_retries_when_not_needed():
@@ -118,6 +188,18 @@ async def test_no_extra_retries_when_not_needed():
         coordinator._downloaded = True
         coordinator.async_retry_after_restart()()
         assert call_later.call_count == 1
+
+
+async def test_no_retries_while_polling_is_disabled():
+    """Test "Enable polling for updates" turned off stops the retries too."""
+    entry = MagicMock(pref_disable_polling=True)
+    entry.runtime_data.failures = failures.FailureRecords()
+    coordinator = _Coordinator(_hass(), _LOGGER, name="Forecast", config_entry=entry)
+
+    with patch.object(scheduler, "async_call_later") as call_later:
+        coordinator.async_retry_after_restart()()
+
+    call_later.assert_not_called()
 
 
 async def test_stopping_the_retries():

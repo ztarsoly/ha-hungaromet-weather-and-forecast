@@ -1,8 +1,5 @@
-# The integration's own packages, as in manifest.json
-pandas
-beautifulsoup4
-
-# Home Assistant and the test and check tools
+# Home Assistant and the test and check tools; the integration itself needs
+# no other packages (see manifest.json)
 homeassistant
 pylint
 pytest

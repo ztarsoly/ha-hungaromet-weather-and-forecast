@@ -1,7 +1,7 @@
 """Tests for running several config entries side by side."""
 
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -11,20 +11,20 @@ from custom_components.hungaromet_weather_and_forecast.scope import (
     device_info,
     scoped_id,
 )
-from custom_components.hungaromet_weather_and_forecast.station_sensor import (
-    FEEDS,
+from custom_components.hungaromet_weather_and_forecast.sensor import StationSensor, StationsSensor
+from custom_components.hungaromet_weather_and_forecast.stations import (
     Measurement,
     StationQuery,
-    StationSensor,
-    StationsSensor,
 )
+
+from .entries import feed_coordinator
 
 SCOPE = EntryScope("e1", "HungaroMet Pécs")
 QUERY = StationQuery(scope=SCOPE)
 
 
 def _sensor(feed, name, key, unit):
-    return StationSensor(None, FEEDS[feed], Measurement(name, key, unit), 0, QUERY)
+    return StationSensor(feed_coordinator(feed, QUERY), Measurement(name, key, unit))
 
 
 def test_scope_from_entry_and_ids():
@@ -65,7 +65,7 @@ def test_device_info_with_and_without_scope():
             "e1_hungaromet_weather_ten_minutes",
         ),
         (
-            StationsSensor(None, FEEDS["hourly"], [], QUERY),
+            StationsSensor(feed_coordinator("hourly", QUERY)),
             "e1_hungaromet_weather_station_info_hourly",
             "e1_hungaromet_weather_hourly",
         ),
@@ -81,6 +81,16 @@ def test_sensors_are_scoped_to_their_entry(entity, unique_id, device_id):
 def _registry_entry(unique_id, domain="sensor", config_entry_id="e1"):
     return SimpleNamespace(
         unique_id=unique_id, domain=domain, config_entry_id=config_entry_id
+    )
+
+
+def _config_entry(version=2, minor_version=1, data=None, options=None):
+    return SimpleNamespace(
+        entry_id="e1",
+        version=version,
+        minor_version=minor_version,
+        data=data or {},
+        options=options or {},
     )
 
 
@@ -128,11 +138,14 @@ async def test_migration_scopes_version_1_entities_and_devices(registries):
     """Test migration scopes version 1 entities and devices."""
     migrate, dev_reg = registries
     hass = MagicMock()
-    entry = SimpleNamespace(entry_id="e1", version=1)
+    entry = _config_entry(version=1, data={"distance_km": 30})
 
     assert await integration.async_migrate_entry(hass, entry) is True
 
-    hass.config_entries.async_update_entry.assert_called_once_with(entry, version=2)
+    assert hass.config_entries.async_update_entry.call_args_list == [
+        call(entry, version=2),
+        call(entry, data={}, options={"distance_km": 30}, minor_version=2),
+    ]
     # Entities: prefixed, except the shared radar and already migrated ones
     scope_entity = migrate.await_args.args[2]
     assert scope_entity(_registry_entry("hungaromet_weather_napi_t")) == {
@@ -151,7 +164,70 @@ async def test_migration_of_current_and_future_versions(registries):
     migrate, _ = registries
     hass = MagicMock()
 
-    assert await integration.async_migrate_entry(hass, SimpleNamespace(version=2)) is True
-    assert await integration.async_migrate_entry(hass, SimpleNamespace(version=3)) is False
+    current = _config_entry(minor_version=2)
+    assert await integration.async_migrate_entry(hass, current) is True
+    future = _config_entry(version=3)
+    assert await integration.async_migrate_entry(hass, future) is False
     migrate.assert_not_awaited()
     hass.config_entries.async_update_entry.assert_not_called()
+
+
+async def test_migration_removes_the_dropped_sensors():
+    """Version 2.2 has no water balance, and global radiation in J/cm² only."""
+    entities = [
+        SimpleNamespace(entity_id=f"sensor.{number}", unique_id=unique_id)
+        for number, unique_id in enumerate((
+            "e1_hungaromet_weather_napi_globálsugárzás_összeg",
+            "e1_hungaromet_weather_napi_globálsugárzás_összeg_(mj/m²)",
+            "e1_hungaromet_weather_hourly_órás_globálsugárzás_összeg_(mj/m²)",
+            "e1_hungaromet_weather_ten_minutes_tízperces_globálsugárzás_összeg_(mj/m²)",
+            "e1_hungaromet_weather_ten_minutes_tízperces_globálsugárzás_összeg",
+            "e1_hungaromet_weather_napi_vízegyenleg",
+            "e1_hungaromet_weather_napi_párolgás",
+        ))
+    ]
+    with (
+        patch.object(integration.er, "async_get") as get_registry,
+        patch.object(
+            integration.er, "async_entries_for_config_entry", return_value=entities
+        ) as listed,
+    ):
+        hass = MagicMock()
+        assert await integration.async_migrate_entry(hass, _config_entry()) is True
+
+    listed.assert_called_once_with(get_registry.return_value, "e1")
+    removed = get_registry.return_value.async_remove.call_args_list
+    assert removed == [call(f"sensor.{number}") for number in (1, 2, 3, 5)]
+
+
+_SETTINGS = {"distance_km": 30.0, "forecast": None, "location": "home"}
+
+
+@pytest.mark.parametrize(
+    ("data", "options", "new_data", "new_options"),
+    [
+        # An entry that was never configured again
+        ({"name": "Pécs", **_SETTINGS}, {}, {"name": "Pécs"}, _SETTINGS),
+        # Settings saved with the Configure form are newer than the setup's
+        (
+            {"name": "Pécs", **_SETTINGS},
+            {"distance_km": 50.0, "forecast": None, "location": "home"},
+            {"name": "Pécs"},
+            {"distance_km": 50.0, "forecast": None, "location": "home"},
+        ),
+        # The radar entry has no settings
+        ({"entry_type": "radar"}, {}, {"entry_type": "radar"}, {}),
+    ],
+)
+async def test_migration_moves_the_settings_to_the_options(
+    data, options, new_data, new_options
+):
+    """Version 2.2 keeps an entry's settings in its options."""
+    hass = MagicMock()
+    entry = _config_entry(data=data, options=options)
+
+    assert await integration.async_migrate_entry(hass, entry) is True
+
+    hass.config_entries.async_update_entry.assert_called_once_with(
+        entry, data=new_data, options=new_options, minor_version=2
+    )

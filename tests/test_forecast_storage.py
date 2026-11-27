@@ -3,6 +3,7 @@
 # The tests check the integration's internals
 # pylint: disable=protected-access
 
+import asyncio
 from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -10,7 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 import custom_components.hungaromet_weather_and_forecast as integration
-from custom_components.hungaromet_weather_and_forecast import forecast, scheduler
+from custom_components.hungaromet_weather_and_forecast.failures import FailureLog
+from custom_components.hungaromet_weather_and_forecast import coordinator as coordinators, scheduler
 from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     HUNGARY_TZ,
     ForecastData,
@@ -116,11 +118,13 @@ def test_saved_forecast_gives_back_the_dropped_row_after_a_restart():
 
 
 def _coordinator(stored):
-    coordinator = object.__new__(forecast.ForecastCoordinator)
+    coordinator = object.__new__(coordinators.ForecastCoordinator)
     coordinator.settlement = DEBRECEN
     coordinator.data = None
     coordinator._saved = None
     coordinator.last_update_success = True
+    coordinator._save_lock = asyncio.Lock()
+    coordinator._failure_log = FailureLog(MagicMock(), "Forecast")
     coordinator._store = MagicMock(async_load=AsyncMock(return_value=stored))
     return coordinator
 
@@ -131,7 +135,7 @@ async def test_load_stored_forecast(key):
     stored = {key: "725", "forecast": forecast_to_dict(_forecast())}
     coordinator = _coordinator(stored)
 
-    with patch.object(forecast.dt_util, "now", return_value=NOW):
+    with patch.object(coordinators.dt_util, "now", return_value=NOW):
         await coordinator.async_load_stored()
 
     # Never shown by itself: only used to fill the first download
@@ -140,6 +144,7 @@ async def test_load_stored_forecast(key):
     assert coordinator._saved.current.forecast_time.hour == 17
     # The 13:00 row is sunny, but the sun has set by 17:00 at the settlement
     assert coordinator._saved.current.weather_condition == "clear-night"
+    assert coordinator.has_saved_current_hour is True
 
 
 @pytest.mark.parametrize(
@@ -154,6 +159,7 @@ async def test_load_ignores_missing_or_other_settlements(stored):
     coordinator = _coordinator(stored)
     await coordinator.async_load_stored()
     assert coordinator._saved is None
+    assert coordinator.has_saved_current_hour is False
 
 
 async def test_load_ignores_unreadable_forecast(caplog):
@@ -170,8 +176,8 @@ async def test_each_download_is_saved():
     coordinator.hass = MagicMock()
     coordinator._store.async_save = AsyncMock()
     with (
-        patch.object(forecast, "async_get_clientsession"),
-        patch.object(forecast, "fetch_forecast", AsyncMock(return_value=_forecast())),
+        patch.object(coordinators, "async_get_clientsession"),
+        patch.object(coordinators, "fetch_forecast", AsyncMock(return_value=_forecast())),
     ):
         data = await coordinator._async_update_data()
 
@@ -193,10 +199,10 @@ async def _download(coordinator):
     coordinator.hass = MagicMock()
     coordinator._store.async_save = AsyncMock()
     with (
-        patch.object(forecast, "async_get_clientsession"),
-        patch.object(forecast, "fetch_forecast", AsyncMock(return_value=_later_download())),
-        patch.object(forecast.dt_util, "now", return_value=NOW),
-        patch.object(forecast, "continue_from_recorded", side_effect=lambda d, *_: d) as go_on,
+        patch.object(coordinators, "async_get_clientsession"),
+        patch.object(coordinators, "fetch_forecast", AsyncMock(return_value=_later_download())),
+        patch.object(coordinators.dt_util, "now", return_value=NOW),
+        patch.object(coordinators, "continue_from_recorded", side_effect=lambda d, *_: d) as go_on,
     ):
         return await coordinator._async_update_data(), go_on
 
@@ -239,8 +245,8 @@ def _failing(saved):
     hass = MagicMock()
     hass.is_stopping = False
     entry = MagicMock(entry_id="e1", pref_disable_polling=False)
-    with patch.object(forecast, "forecast_store"):
-        coordinator = forecast.ForecastCoordinator(hass, entry, DEBRECEN)
+    with patch.object(coordinators, "forecast_store"):
+        coordinator = coordinators.ForecastCoordinator(hass, entry, DEBRECEN)
     coordinator._saved = saved
     coordinator._listeners = {1: (MagicMock(), None)}
     coordinator._schedule_refresh = MagicMock()
@@ -250,9 +256,9 @@ def _failing(saved):
 
 async def _fail(coordinator, now):
     with (
-        patch.object(forecast, "async_get_clientsession"),
-        patch.object(forecast, "fetch_forecast", AsyncMock(side_effect=TimeoutError())),
-        patch.object(forecast.dt_util, "now", return_value=now),
+        patch.object(coordinators, "async_get_clientsession"),
+        patch.object(coordinators, "fetch_forecast", AsyncMock(side_effect=TimeoutError())),
+        patch.object(coordinators.dt_util, "now", return_value=now),
     ):
         await coordinator.async_refresh()
 
@@ -302,9 +308,9 @@ async def test_a_working_download_is_shown_as_it_is():
     coordinator._store.async_save = AsyncMock()
     new = _later_download()
     with (
-        patch.object(forecast, "async_get_clientsession"),
-        patch.object(forecast, "fetch_forecast", AsyncMock(return_value=new)),
-        patch.object(forecast.dt_util, "now", return_value=NOW),
+        patch.object(coordinators, "async_get_clientsession"),
+        patch.object(coordinators, "fetch_forecast", AsyncMock(return_value=new)),
+        patch.object(coordinators.dt_util, "now", return_value=NOW),
     ):
         await coordinator.async_refresh()
 
@@ -324,12 +330,54 @@ async def test_the_saved_forecast_does_not_stop_the_retries():
     call_later.assert_called_once()
 
 
+async def test_a_download_finishing_after_the_unload_is_not_saved():
+    """Otherwise it would write the file of a removed entry back."""
+    coordinator = _coordinator(None)
+    store = coordinator._store
+    store.async_save = AsyncMock()
+    coordinator.hass = MagicMock()
+    await coordinator.async_close()
+
+    with (
+        patch.object(coordinators, "async_get_clientsession"),
+        patch.object(coordinators, "fetch_forecast", AsyncMock(return_value=_forecast())),
+    ):
+        data = await coordinator._async_update_data()
+
+    assert data.current is not None
+    store.async_save.assert_not_awaited()
+
+
+async def test_closing_waits_for_a_save_under_way():
+    """The entry's removal deletes the file only after the save has finished."""
+    coordinator = _coordinator(None)
+    started, finish = asyncio.Event(), asyncio.Event()
+
+    async def save(_data):
+        started.set()
+        await finish.wait()
+
+    store = coordinator._store
+    store.async_save = AsyncMock(side_effect=save)
+    saving = asyncio.create_task(coordinator._async_save(_forecast()))
+    await started.wait()
+
+    close = asyncio.create_task(coordinator.async_close())
+    await asyncio.sleep(0)
+    assert not close.done()
+
+    finish.set()
+    await close
+    await saving
+    store.async_save.assert_awaited_once()
+
+
 def test_store_is_per_entry():
     """Test store is per entry."""
-    with patch.object(forecast, "Store") as store:
-        forecast.forecast_store("hass", "e1")
+    with patch.object(coordinators, "Store") as store:
+        coordinators.forecast_store("hass", "e1")
     store.assert_called_once_with(
-        "hass", forecast.STORAGE_VERSION, "hungaromet_weather_and_forecast.forecast.e1"
+        "hass", coordinators.STORAGE_VERSION, "hungaromet_weather_and_forecast.forecast.e1"
     )
 
 
@@ -337,10 +385,10 @@ def test_coordinator_creates_its_store():
     """Test coordinator creates its store."""
     entry = SimpleNamespace(entry_id="e1")
     with (
-        patch.object(forecast.ScheduledCoordinator, "__init__", return_value=None),
-        patch.object(forecast, "forecast_store") as store,
+        patch.object(coordinators.ScheduledCoordinator, "__init__", return_value=None),
+        patch.object(coordinators, "forecast_store") as store,
     ):
-        coordinator = forecast.ForecastCoordinator("hass", entry, DEBRECEN)
+        coordinator = coordinators.ForecastCoordinator("hass", entry, DEBRECEN)
     store.assert_called_once_with("hass", "e1")
     assert coordinator._store is store.return_value
 
@@ -356,7 +404,9 @@ async def test_removing_an_entry_deletes_its_saved_forecast_and_warnings():
             integration, "warning_store", return_value=saved_warnings
         ) as get_warnings,
     ):
-        await integration.async_remove_entry(hass, SimpleNamespace(entry_id="e1"))
+        await integration.async_remove_entry(
+            hass, SimpleNamespace(entry_id="e1", data={})
+        )
 
     get_store.assert_called_once_with(hass, "e1")
     store.async_remove.assert_awaited_once()

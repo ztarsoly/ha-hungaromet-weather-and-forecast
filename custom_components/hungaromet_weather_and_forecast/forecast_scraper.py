@@ -37,10 +37,10 @@ from datetime import UTC, date, datetime, timedelta
 import aiohttp
 from astral import Observer
 from astral.sun import elevation
-from bs4 import BeautifulSoup, Tag
 from homeassistant.util import dt as dt_util
 
-from .failures import warn_once
+from .failures import FailureRecords
+from .html_tree import Element, parse_html
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -172,7 +172,11 @@ class ForecastData:
 async def lookup_settlement(
     session: aiohttp.ClientSession, name: str
 ) -> Settlement | None:
-    """Find a settlement with met.hu's search; an exact name beats the first hit."""
+    """Find a settlement with met.hu's search; an exact name beats the first hit.
+
+    None if met.hu knows no such settlement (an empty list); ValueError if its
+    answer cannot be used.
+    """
     async with session.get(
         SEARCH_URL,
         params={"term": name},
@@ -181,8 +185,12 @@ async def lookup_settlement(
     ) as resp:
         resp.raise_for_status()
         suggestions = await resp.json(content_type=None)
-    if not isinstance(suggestions, list) or not suggestions:
+    if suggestions == []:
         return None
+    if not isinstance(suggestions, list) or not all(
+        isinstance(s, dict) for s in suggestions
+    ):
+        raise ValueError(f"not a list of settlements: {str(suggestions)[:100]}")
 
     wanted = name.strip().casefold()
     chosen = next(
@@ -196,15 +204,19 @@ async def lookup_settlement(
             lat=float(chosen["lat"]),
             lon=float(chosen["lon"]),
         )
-    except (KeyError, TypeError, ValueError):
-        _LOGGER.error("met.hu's search gave an unusable settlement: %s", chosen)
-        return None
+    except (KeyError, TypeError, ValueError) as err:
+        raise ValueError(f"unusable settlement: {str(chosen)[:100]}") from err
 
 
 async def fetch_forecast(
-    session: aiohttp.ClientSession, settlement: Settlement
+    session: aiohttp.ClientSession,
+    settlement: Settlement,
+    records: FailureRecords | None = None,
 ) -> ForecastData:
-    """Download a settlement's forecast table and read it."""
+    """Download a settlement's forecast table and read it.
+
+    records: what is logged already, so unknown words are warned about once.
+    """
     form = {
         "kod": settlement.kod,
         "lt": str(settlement.lat),
@@ -220,7 +232,12 @@ async def fetch_forecast(
     ) as resp:
         resp.raise_for_status()
         html = await resp.text(encoding="utf-8", errors="replace")
-    return parse_page(html, settlement.name, location=(settlement.lat, settlement.lon))
+    return parse_page(
+        html,
+        settlement.name,
+        location=(settlement.lat, settlement.lon),
+        records=records,
+    )
 
 
 def parse_page(
@@ -228,25 +245,28 @@ def parse_page(
     settlement_name: str,
     now: datetime | None = None,
     location: tuple[float, float] | None = None,
+    records: FailureRecords | None = None,
 ):
     """Read a forecast page; raise ValueError when it has no forecast rows."""
     now = now or dt_util.now()
-    soup = BeautifulSoup(html, "html.parser")
-    tbody = soup.find("tbody")
-    rows = _read_rows(tbody, now) if tbody else []
+    page = parse_html(html)
+    tbody = page.find("tbody")
+    rows = _read_rows(tbody, now, records or FailureRecords()) if tbody else []
     if not rows:
         raise ValueError(f"met.hu has no forecast table for {settlement_name}")
     data = ForecastData(
         settlement=settlement_name,
         location=location,
-        issued=_issue_time(soup.get_text(" ", strip=True)),
+        issued=_issue_time(page.text(" ")),
         periods=rows,
     )
     _derive(data, now)
     return data
 
 
-def _read_rows(tbody: Tag, now: datetime) -> list[ForecastPeriod]:
+def _read_rows(
+    tbody: Element, now: datetime, records: FailureRecords
+) -> list[ForecastPeriod]:
     """Read the table's rows; the first day cell dates the first row.
 
     A row is on the same day as the one before it while the hours rise, and on
@@ -270,22 +290,22 @@ def _read_rows(tbody: Tag, now: datetime) -> list[ForecastPeriod]:
             if last_clock is not None and clock <= last_clock:
                 day += timedelta(days=1)
             last_clock = clock
-        rows.append(_row(cells, day))
+        rows.append(_row(cells, day, records))
     return rows
 
 
-def _cells_by_class(tr: Tag) -> dict[str, list[Tag]]:
+def _cells_by_class(tr: Element) -> dict[str, list[Element]]:
     """Group a row's cells by their first class, in the row's order."""
     cells = defaultdict(list)
     for td in tr.find_all("td", recursive=False):
-        if classes := td.get("class"):
+        if classes := td.classes:
             cells[classes[0]].append(td)
     return cells
 
 
-def _calendar_day(th: Tag, now: datetime) -> date | None:
+def _calendar_day(th: Element, now: datetime) -> date | None:
     """Read a day cell; the year is the one that puts the day nearest to now."""
-    parts = [div.get_text(strip=True).lower() for div in th.find_all("div")]
+    parts = [div.text().lower() for div in th.find_all("div")]
     if len(parts) < 2 or parts[0] not in MONTHS or not parts[1].isdigit():
         return None
     month, day = MONTHS.index(parts[0]) + 1, int(parts[1])
@@ -299,11 +319,13 @@ def _calendar_day(th: Tag, now: datetime) -> date | None:
     return min(candidates, key=lambda d: abs(d - today), default=None)
 
 
-def _row(cells: dict[str, list[Tag]], day: date) -> ForecastPeriod:
+def _row(
+    cells: dict[str, list[Element]], day: date, records: FailureRecords
+) -> ForecastPeriod:
     """Read one forecast row."""
     period = ForecastPeriod(forecast_time=_row_time(_text(cells["ora"][0]), day))
     for td in cells.get("T", []):
-        kind = (td.get("class") + [""])[1]
+        kind = (td.classes + [""])[1]
         name = {"X": "temperature_max", "N": "temperature_min"}.get(kind, "temperature")
         setattr(period, name, _number(_text(td)))
     period.precipitation = _first_number(cells, "R")
@@ -312,13 +334,13 @@ def _row(cells: dict[str, list[Tag]], day: date) -> ForecastPeriod:
     speeds = [_number(_text(td)) for td in cells.get("Wf", [])]
     period.wind_speed, period.wind_gust = (speeds + [None, None])[:2]
     period.pressure = _first_number(cells, "P")
-    period.wind_bearing, period.wind_direction = _wind(cells)
-    period.weather_condition = _weather(cells)
+    period.wind_bearing, period.wind_direction = _wind(cells, records)
+    period.weather_condition = _weather(cells, records)
     return period
 
 
-def _text(td: Tag) -> str:
-    return td.get_text(" ", strip=True)
+def _text(td: Element) -> str:
+    return td.text(" ")
 
 
 def _number(text: str) -> float | None:
@@ -328,7 +350,7 @@ def _number(text: str) -> float | None:
     return float(match[0].replace(",", ".")) + 0.0 if match else None
 
 
-def _first_number(cells: dict[str, list[Tag]], name: str) -> float | None:
+def _first_number(cells: dict[str, list[Element]], name: str) -> float | None:
     return _number(_text(cells[name][0])) if cells.get(name) else None
 
 
@@ -345,7 +367,9 @@ def _row_time(text: str, day: date) -> datetime | None:
     return datetime(day.year, day.month, day.day, *clock, tzinfo=HUNGARY_TZ)
 
 
-def _wind(cells: dict[str, list[Tag]]) -> tuple[float | None, str | None]:
+def _wind(
+    cells: dict[str, list[Element]], records: FailureRecords
+) -> tuple[float | None, str | None]:
     """Return the wind's bearing and its direction on the 16-point compass.
 
     met.hu's direction names are coarser (12° is "északi"), so the direction
@@ -359,13 +383,15 @@ def _wind(cells: dict[str, list[Tag]]) -> tuple[float | None, str | None]:
     name = _text(cells["Wd"][0]).lower() if cells.get("Wd") else ""
     direction = WIND_NAMES.get(name)
     if name and direction is None:
-        warn_once(_LOGGER, "Unknown met.hu wind direction %r", name)
+        records.warn_once(_LOGGER, "Unknown met.hu wind direction %r", name)
     if bearing is None:
         return bearing, direction
     return bearing, bearing_to_direction(bearing)
 
 
-def _weather(cells: dict[str, list[Tag]]) -> str | None:
+def _weather(
+    cells: dict[str, list[Element]], records: FailureRecords
+) -> str | None:
     """Return the Home Assistant condition of a row's weather symbol."""
     for td in cells.get("idoikon", []):
         img = td.find("img")
@@ -376,7 +402,7 @@ def _weather(cells: dict[str, list[Tag]]) -> str | None:
         description = tooltip[1].strip() if tooltip else ""
         condition = condition_for(description, night=symbol[2] == "e")
         if condition is None:
-            warn_once(_LOGGER, "Unknown met.hu weather %r", description)
+            records.warn_once(_LOGGER, "Unknown met.hu weather %r", description)
         return condition
     return None
 

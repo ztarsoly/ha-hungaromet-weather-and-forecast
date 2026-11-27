@@ -1,28 +1,27 @@
-"""What the update service refreshes: every entry's feeds, forecast and radar images.
+"""What the update action refreshes: every entry's feeds, forecast and radar images.
 
-Each part registers its own refresh here while it is loaded, and the service runs
-all of them.
+Each part registers its own refresh with its entry while it is loaded, and the
+action runs those of every loaded entry.
 """
 
 import logging
 from collections.abc import Awaitable, Callable
 
-from homeassistant.core import HomeAssistant, ServiceCall, callback
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN
+from .data import HungaroMetConfigEntry
 
 _LOGGER = logging.getLogger(__package__)
-
-UPDATERS = f"{DOMAIN}_updaters"
-SERVICE_UPDATE = "update"
 
 
 @callback
 def async_register_updater(
-    hass: HomeAssistant, key: str, update: Callable[[], Awaitable]
+    entry: HungaroMetConfigEntry, key: str, update: Callable[[], Awaitable]
 ) -> Callable[[], None]:
-    """Let the update service run `update`; returns a function that removes it."""
-    updaters = hass.data.setdefault(UPDATERS, {})
+    """Let the update action run `update`; returns a function that removes it."""
+    updaters = entry.runtime_data.updaters
     updaters[key] = update
 
     @callback
@@ -33,20 +32,24 @@ def async_register_updater(
     return remove
 
 
+def loaded_entries(hass: HomeAssistant) -> list[HungaroMetConfigEntry]:
+    """Return the entries that are loaded."""
+    return [
+        entry
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if entry.state is ConfigEntryState.LOADED
+    ]
+
+
 async def async_update_all(hass: HomeAssistant) -> None:
-    """Run every registered refresh; one failure does not stop the others."""
-    for key, update in list(hass.data.get(UPDATERS, {}).items()):
+    """Run every loaded entry's refreshes; one failure does not stop the others."""
+    updaters = [
+        item
+        for entry in loaded_entries(hass)
+        for item in entry.runtime_data.updaters.items()
+    ]
+    for key, update in updaters:
         try:
             await update()
         except Exception:  # pylint: disable=broad-exception-caught
             _LOGGER.exception("Updating %s failed", key)
-
-
-@callback
-def async_register_update_service(hass: HomeAssistant) -> None:
-    """Register the update service once for the integration."""
-
-    async def handle_update(_call: ServiceCall) -> None:
-        await async_update_all(hass)
-
-    hass.services.async_register(DOMAIN, SERVICE_UPDATE, handle_update)

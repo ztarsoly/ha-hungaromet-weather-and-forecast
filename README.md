@@ -3,7 +3,7 @@
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
 [![GitHub Release](https://img.shields.io/github/v/release/ztarsoly/ha-hungaromet-weather-and-forecast)](https://github.com/ztarsoly/ha-hungaromet-weather-and-forecast/releases)
 
-Ez az egyéni Home Assistant integráció a HungaroMet Magyar Meteorológiai Szolgálat nyilvános adataiból ad időjárás-érzékelőket, előrejelzést és radarképeket.
+Ez az egyéni Home Assistant integráció a [HungaroMet Magyar Meteorológiai Szolgálat](https://www.met.hu/) nyilvános adataiból ad időjárás-érzékelőket, előrejelzést és radarképeket.
 
 ## Funkciók
 
@@ -11,14 +11,15 @@ Ez az egyéni Home Assistant integráció a HungaroMet Magyar Meteorológiai Szo
 - **Állomások**: mely állomások mérései adják az értékeket
 - **Előrejelzés**: időjárás-entitás 7 napos és órás előrejelzéssel egy magyarországi településre, valamint előrejelzés-érzékelők, riasztás és figyelmeztetés
 - **Radarképek**: animált országos radarkép, és helyszínenként a környék regionális radarképe
-- **Több helyszín**: az integráció többször is hozzáadható, mindegyik helyszín saját eszközökkel
+- **Több helyszín**: az integráció többször is hozzáadható, mindegyik helyszín saját szolgáltatásokkal
+- **Választható szolgáltatások**: a mérőállomás-szolgáltatások, a regionális és az országos radarkép külön-külön kikapcsolhatók
 
 ## Követelmények
 
 - Home Assistant 2024.12 vagy újabb
 - Internetkapcsolat az `odp.met.hu` és a `www.met.hu` eléréséhez
 
-A szükséges Python-csomagokat (pandas, beautifulsoup4) a Home Assistant telepíti; a requests és a Pillow a Home Assistant része.
+Külön Python-csomagot nem kell telepíteni: az integráció csak a Python és a Home Assistant saját csomagjait használja.
 
 ## Telepítés
 
@@ -52,24 +53,39 @@ Az integráció a felhasználói felületen állítható be:
 
 | Mező | Jelentés |
 |---|---|
-| **Név** | A helyszín neve; az eszközök nevének eleje lesz (pl. `Pécs` → *Pécs Napi Időjárás*) |
+| **Név** | A helyszín neve; a szolgáltatások nevének eleje lesz (pl. `Pécs` → *Pécs Napi Időjárás*). Csak akkor maradhat üresen, ha kizárólag a radart veszi fel. |
 | **Állomáskeresési sugár (km)** | A helytől ennyi kilométeren belüli állomások átlagát adják az érzékelők (1–100 km, alapértelmezés: 20 km). Az adat nélküli (nem elérhető) állomásokat nem veszi figyelembe. Ha egy elérhető állomás sincs ilyen közel, a legközelebbi elérhető állomás adatait használja. |
 | **Előrejelzés települése** | Nem kötelező. Egy magyarországi település (pl. `Debrecen`) az előrejelzéshez, ékezetekkel, helyesen írva; a nevet a met.hu-n keresi meg az integráció. Üresen hagyva nincs előrejelzés. |
-| **Időjárás-érzékelők helye** | Honnan mérje az állomáskeresési sugarat: a Home Assistant otthoni helyétől (**Otthon**) vagy az előrejelzés településétől (**Előrejelzés települése**) |
+| **Hely** | Honnan mérje az állomáskeresési sugarat, és a regionális radarkép az ország melyik negyedét mutassa: a Home Assistant otthoni helye (**Otthon**) vagy az előrejelzés települése (**Előrejelzés települése**) alapján |
+| **Szolgáltatások** | A *Napi időjárás*, *Órás időjárás*, *10 perces időjárás* szolgáltatás és a *Regionális radarkép* közül a kívántak (alapértelmezés: mind). Csak a bejelöltek töltődnek le és jönnek létre. Legalább egyet be kell jelölni, vagy meg kell adni az előrejelzés települését. |
+| **Országos radarkép** | Jelölőnégyzet, amely csak akkor látszik, ha még nincs **Radar** bejegyzés; alapból bejelölve, és ekkor felveszi |
 
-A név, a sugár, a település és a hely később is módosítható a bejegyzés **Konfigurálás** gombjával. Új névnél a bejegyzés eszközei is az új nevet kapják; az Ön által átnevezett eszközök nevében csak a régi név cserélődik. Ugyanez történik, ha a bejegyzést a Home Assistant saját **Átnevezés** menüpontjával nevezi át.
+Mentés előtt az integráció ellenőrzi, hogy a met.hu ismeri-e a települést, és hogy a választott források letölthetők-e: mérőállomás-szolgáltatás választásakor a HungaroMet mérései, csak regionális radarkép választásakor a radarkép. Ha csak a radart veszi fel, a legújabb országos radarképkocka letöltését ellenőrzi. Ha valamelyik nem sikerül, az űrlap hibát jelez.
+
+Hogy a bejegyzések ne ismételjék egymás érzékelőit, minden előrejelzés-település csak egy bejegyzésben szerepelhet, és csak egy bejegyzés szolgáltatásai mérhetnek az **Otthon** helyen (az előrejelzés nélküli bejegyzés is ott mér; a csak előrejelzést adó, mérőállomás és regionális radarkép nélküli bejegyzés nem számít ide); az állomáskeresési sugár ebből a szempontból nem számít. A további bejegyzésekhez ezért másik települést kell megadni, és az **Előrejelzés települése** helyet kell választani. Az ezt sértő beállítást a hozzáadás és a **Konfigurálás** űrlapja is elutasítja. A korábbi verzióval felvett, egymást átfedő bejegyzések tovább működnek, és a többi beállításuk módosítható. Egymáshoz közeli helyeknél az állomásérzékelők és a regionális radarkép ettől még egyezhetnek.
+
+A név, a sugár, a település, a hely és a szolgáltatások később is módosíthatók a bejegyzés **Konfigurálás** gombjával. Ha törli egy szolgáltatás jelölését, a szolgáltatás és az entitásai törlődnek; ha kiüríti az előrejelzés települését, ugyanígy törlődik az *Előrejelzés* szolgáltatás. Új névnél a bejegyzés szolgáltatásai is az új nevet kapják; az Ön által átnevezett szolgáltatások nevében csak a régi név cserélődik. Ugyanez történik, ha a bejegyzést a Home Assistant saját **Átnevezés** menüpontjával nevezi át.
 
 ### Több helyszín
 
-Az integrációt többször is hozzáadhatja, például az otthonára és egy másik településre. Minden bejegyzés saját eszközöket kap, a bejegyzés **Név** mezője szerint elnevezve: a `HungaroMet` nevű bejegyzés eszköze a *HungaroMet Napi Időjárás*, a `Pécs` nevűé a *Pécs Napi Időjárás*, és így tovább.
+Az integrációt többször is hozzáadhatja, például az otthonára és egy másik településre. Minden bejegyzés saját szolgáltatásokat kap, a bejegyzés **Név** mezője szerint elnevezve: a `HungaroMet` nevű bejegyzés szolgáltatása a *HungaroMet Napi Időjárás*, a `Pécs` nevűé a *Pécs Napi Időjárás*, és így tovább.
 
-Az országos radarkép mindenhol ugyanaz, ezért saját bejegyzése van, a **Radar**. Az első helyszín hozzáadásakor automatikusan létrejön, és ha törli, a következő újraindításkor visszatér. Kikapcsolásához tiltsa le a bejegyzést.
+Az országos radarkép mindenhol ugyanaz, ezért saját bejegyzése van, a **Radar**. Amíg nincs ilyen bejegyzés, a beállítás űrlapján megjelenik az **Országos radarkép** jelölőnégyzet (alapból bejelölve); bejelölve a helyszínnel együtt a **Radar** bejegyzés is létrejön. Ha csak a radart szeretné, hagyja üresen a nevet és az előrejelzés települését, törölje minden szolgáltatás jelölését, a jelölőnégyzet pedig maradjon bejelölve. Ha a **Radar** bejegyzést törli, magától nem jön létre újra, a jelölőnégyzet viszont ismét megjelenik, amikor új bejegyzést ad hozzá. Kikapcsolásához tiltsa le a bejegyzést.
 
-## Eszközök és entitások
+## Eltávolítás
 
-Helyszínenként:
+1. Lépjen a Beállítások → Eszközök és szolgáltatások → **HungaroMet Weather & Forecast** oldalra
+2. Törölje a helyszínek bejegyzéseit (a bejegyzés hárompontos menüjében: **Törlés**), utoljára pedig a **Radar** bejegyzést. A bejegyzéssel együtt a szolgáltatásai, az entitásai és a mentett előrejelzése is törlődnek
+3. Távolítsa el az integrációt: a HACS-ben a hárompontos menü **Eltávolítás** (Remove) pontjával, kézi telepítés esetén pedig a `custom_components/hungaromet_weather_and_forecast` könyvtár törlésével
+4. Indítsa újra a Home Assistantet
 
-| Eszköz | Tartalom |
+Az entitások korábbi előzményei a Home Assistant előzmény-megőrzési beállításai szerint törlődnek.
+
+## Szolgáltatások és entitások
+
+Helyszínenként (a mérőállomás-szolgáltatások és a regionális radarkép közül csak a bejelöltek):
+
+| Szolgáltatás | Tartalom |
 |---|---|
 | *{Név} Napi Időjárás* | Az előző nap mérései |
 | *{Név} Órás Időjárás* | Az utolsó óra mérései |
@@ -81,40 +97,42 @@ A **Radar** bejegyzésben: *Országos Radarkép*.
 
 ### Mért időjárás
 
-A napi, órás és 10 perces eszközök érzékelői a kiválasztott állomások méréseinek átlagát mutatják (a szélirányoknál irányhelyes átlagot). Az elérhető mérések eszközönként eltérnek:
+A napi, órás és 10 perces szolgáltatások érzékelői a kiválasztott állomások méréseinek átlagát mutatják (a szélirányoknál irányhelyes átlagot). Az elérhető mérések szolgáltatásonként eltérnek:
 
 | Mérés | Napi | Órás | 10 perces |
 |---|:-:|:-:|:-:|
-| Mérési időpont | ✓ | ✓ | ✓ |
+| Mérés ideje | ✓ | ✓ | ✓ |
 | Hőmérséklet (átlag, minimum, maximum) | ✓ | ✓ | ✓ |
 | Pillanatnyi hőmérséklet | | ✓ | ✓ |
-| Felszínközeli hőmérséklet minimuma | ✓ | ✓ | ✓ |
+| Felszínközeli minimumhőmérséklet | ✓ | ✓ | ✓ |
 | Talajhőmérséklet 5, 10, 20, 50 és 100 cm-en | ✓ | ✓ | ✓ |
 | Vízhőmérséklet | ✓ | ✓ | ✓ |
-| Csapadékösszeg | ✓ | ✓ | ✓ |
-| Párolgás, vízegyenleg | ✓ | | |
-| Relatív nedvesség | ✓ | ✓ | ✓ |
+| Csapadék | ✓ | ✓ | ✓ |
+| Párolgás | ✓ | | |
+| Relatív páratartalom | ✓ | ✓ | ✓ |
 | Műszerszinti légnyomás | ✓ | ✓ | ✓ |
 | Tengerszinti légnyomás | ✓ | ✓ | |
-| Átlagos szélsebesség | ✓ | ✓ | ✓ |
-| Átlagos szélirány | | ✓ | ✓ |
+| Szélsebesség | ✓ | ✓ | ✓ |
+| Szélirány | | ✓ | ✓ |
 | Szinoptikus szélsebesség | ✓ | ✓ | |
 | Szinoptikus szélirány | | ✓ | |
 | Uralkodó szélirány (égtáj) | ✓ | | |
 | Maximális széllökés sebessége, iránya és ideje | ✓ | ✓ | ✓ |
-| Globálsugárzás összeg (J/cm² és MJ/m²) | ✓ | ✓ | ✓ |
-| UV-sugárzás összeg | ✓ | ✓ | ✓ |
+| Globálsugárzás összesen (J/cm²) | ✓ | ✓ | |
+| Globálsugárzás, 10 perces átlag (W/m²) | | | ✓ |
+| UV-sugárzás összesen (MED) | ✓ | ✓ | |
+| UV-sugárzás, 10 perces átlag (MED/h) | | | ✓ |
 | Gammadózis | ✓ | ✓ | ✓ |
-| Látástávolság | ✓ | ✓ | ✓ |
+| Látótávolság | ✓ | ✓ | ✓ |
 | Időkép kódja | | ✓ | |
 
-Mindhárom eszköznek van egy **Állomások** érzékelője is. Az értéke a felhasznált állomások száma, a `stations` attribútuma az állomások listája (szám, név, koordináták, tengerszint feletti magasság), a legközelebbivel kezdve, a `raw_data` attribútuma pedig az állomások teljes mérési sorai, a távolságukkal együtt.
+Mindhárom szolgáltatásnak van egy **Állomások** érzékelője is. Az értéke a felhasznált állomások száma, a `stations` attribútuma az állomások listája (szám, név, koordináták, tengerszint feletti magasság), a legközelebbivel kezdve, a `raw_data` attribútuma pedig az állomások teljes mérési sorai, a távolságukkal együtt.
 
 ### Előrejelzés
 
-Az előrejelzés eszköz ezeket adja:
+Az előrejelzés szolgáltatás ezeket adja:
 
-- Az eszközről elnevezett **időjárás-entitást** napi (7 napos) és órás előrejelzéssel az időjárás-kártyákhoz
+- A szolgáltatásról elnevezett **időjárás-entitást** napi (7 napos) és órás előrejelzéssel az időjárás-kártyákhoz
 - **Érzékelőket** az aktuális órára: hőmérséklet, csapadék, felhőzet, szélsebesség, széllökés, szélirány (fok és égtáj), szélerősség (Beaufort-skála, a szélsebességből számítva), légnyomás és időjárási helyzet
 - A **mai minimum- és maximumhőmérsékletet**, valamint az előrejelzés **kiadásának idejét**
 - A **Riasztás 3 órán belül** és a **Figyelmeztetés mára** érzékelőt a HungaroMet veszélyjelzéséből
@@ -170,9 +188,11 @@ Az időpontok UTC szerintiek (télen a magyar idő UTC+1, nyáron UTC+2).
 Az újrapróbálkozás legfeljebb a következő ütemezett frissítésig tart. Ezen felül:
 
 - Indításkor és a bejegyzés újratöltésekor minden azonnal frissül. Ami ekkor nem sikerül, azt az integráció az ütemezett próbálkozások mellett percenként is újrapróbálja, amíg először nem sikerül.
-- A `hungaromet_weather_and_forecast.update` szolgáltatás azonnal frissít mindent: minden bejegyzés időjárás-érzékelőit, előrejelzését, riasztását és figyelmeztetését, valamint a regionális és az országos radarképet. Egy-egy entitás a Home Assistant `homeassistant.update_entity` szolgáltatásával is frissíthető.
-- A letiltott entitások adatai nem töltődnek le.
-- Ha a bejegyzés rendszerbeállításaiban kikapcsolja a frissítések lekérdezését (*Enable polling for updates*), az ütemezett frissítések elmaradnak; a fenti szolgáltatások ilyenkor is működnek.
+- Ha ekkor egy helyszín egyetlen mérése, előrejelzése, riasztása és figyelmeztetése sem tölthető le, és nincs az aktuális órát tartalmazó mentett előrejelzése, akkor a bejegyzés nem töltődik be. A Home Assistant újrapróbálja a beállítását, néhány másodperc után egyre ritkábban, végül 10 percenként; addig a bejegyzés entitásai (a regionális radarkép is) nem elérhetők. Mérőállomás-szolgáltatás nélküli bejegyzés akkor is betöltődik, ha csak a választott regionális radarképe tölthető le.
+- A **Radar** bejegyzés sem töltődik be, amíg a legújabb országos radarképkocka nem tölthető le. A Home Assistant ugyanígy újrapróbálja a beállítását, az okot az integráció oldalán mutatja, és addig az *Országos Radarkép* nem elérhető.
+- A `hungaromet_weather_and_forecast.update` művelet azonnal frissít mindent: minden bejegyzés időjárás-érzékelőit, előrejelzését, riasztását és figyelmeztetését, valamint a regionális és az országos radarképet. Paramétere nincs. Ha egy bejegyzés sincs betöltve, hibát jelez. Egy-egy entitás a Home Assistant `homeassistant.update_entity` műveletével is frissíthető.
+- A letiltott entitások adatait az ütemezett frissítések és a fenti műveletek nem töltik le. Indításkor és a bejegyzés újratöltésekor viszont minden választott mérőállomás-szolgáltatás mérései egyszer letöltődnek, a **Radar** bejegyzés pedig letölti a legújabb országos radarképkockát akkor is, ha az érintett entitások le vannak tiltva. Ha ekkor egyik mérés sem tölthető le, és nincs az aktuális órát tartalmazó mentett előrejelzés, az integráció az előrejelzést, majd szükség esetén a riasztást is megpróbálja letölteni.
+- Ha a bejegyzés rendszerbeállításaiban kikapcsolja a frissítések lekérdezését (*Enable polling for updates*), az ütemezett frissítések és a sikertelen letöltések automatikus újrapróbálásai elmaradnak. Az indításkori és újratöltéskori egyszeri frissítés, valamint a fenti műveletek ilyenkor is működnek, és a be nem töltött bejegyzés beállítását a Home Assistant ilyenkor is újrapróbálja.
 
 ## Nem elérhető entitások
 
@@ -184,7 +204,7 @@ Az érzékelők, az időjárás-entitás és a radarképek *ismeretlen* érték 
 
 **Kivétel az előrejelzés:** ha a letöltése nem sikerül, az előrejelzés-érzékelők és az időjárás-entitás az utolsó letöltött (újraindítás után a mentett) előrejelzést követik óráról órára. Csak akkor nem elérhetők, ha abban már nincs benne az aktuális óra. A riasztás és a figyelmeztetés ilyenkor is nem elérhető.
 
-A sikertelen letöltést az integráció egyszer, figyelmeztetésként (WARNING) írja a naplóba, a következő sikeres letöltést pedig szintén egyszer. A közbenső sikertelen próbálkozások nem kerülnek a naplóba. Váratlan hibánál a figyelmeztetés a hiba részleteit (traceback) is tartalmazza. Az ismeretlen időjárás-leírásról és szélirányról értékenként egy figyelmeztetés kerül a naplóba, és egy arról is, ha a megadott távolságon belül nincs mérő állomás, ezért a legközelebbit használja.
+A sikertelen letöltést az integráció egyszer, figyelmeztetésként (WARNING) írja a naplóba, a következő sikeres letöltést pedig szintén egyszer. A közbenső sikertelen próbálkozások nem kerülnek a naplóba. Váratlan hibánál a figyelmeztetés a hiba részleteit (traceback) is tartalmazza. Az ismeretlen időjárás-leírásról és szélirányról bejegyzésenként és értékenként egy figyelmeztetés kerül a naplóba, és egy arról is, ha a megadott távolságon belül nincs mérő állomás, ezért a legközelebbit használja. Ha egy bejegyzés újratöltődik (például a beállításai módosítása után), vagy a Home Assistant újraindul, a naplózás elölről kezdődik: a még mindig sikertelen letöltés újra bekerül a naplóba, a korábban sikertelen, majd az újratöltés után rögtön sikeres letöltésről pedig nem készül külön bejegyzés. Ha a bejegyzés nem töltődik be, és a Home Assistant később újrapróbálja a beállítását, ezekről a sikertelen letöltésekről csak hibakeresési (DEBUG) szintű naplóbejegyzés készül: az okot a Home Assistant mutatja az integráció oldalán, és a sikeres betöltés után nem készül „works again” bejegyzés.
 
 ## Adatforrások
 

@@ -7,12 +7,24 @@ carry the entry's name. The shared national radar image stays unscoped.
 
 from dataclasses import dataclass
 
-from .const import CONF_ENTRY_TYPE, DOMAIN, ENTRY_TYPE_RADAR
+from .const import (
+    CONF_DEVICES,
+    CONF_ENTRY_TYPE,
+    DEVICES,
+    DOMAIN,
+    ENTRY_TYPE_RADAR,
+)
 
 
 def is_radar_entry(entry) -> bool:
     """Return whether an entry is the national radar entry, not a location."""
     return entry.data.get(CONF_ENTRY_TYPE) == ENTRY_TYPE_RADAR
+
+
+def entry_devices(entry) -> tuple[str, ...]:
+    """Return a location entry's chosen devices; older entries have all of them."""
+    chosen = entry.options.get(CONF_DEVICES, DEVICES)
+    return tuple(device for device in DEVICES if device in chosen)
 
 
 @dataclass(frozen=True)

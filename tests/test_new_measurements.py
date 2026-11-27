@@ -1,18 +1,14 @@
 """Tests for pressure, visibility, wind direction and gust time handling."""
 
-from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
-import pandas as pd
 import pytest
 from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.util import dt as dt_util
 
-from custom_components.hungaromet_weather_and_forecast.station_sensor import (
-    FEEDS,
+from custom_components.hungaromet_weather_and_forecast.sensor import StationSensor
+from custom_components.hungaromet_weather_and_forecast.stations import (
     Measurement,
-    StationQuery,
-    StationSensor,
 )
 from custom_components.hungaromet_weather_and_forecast.weather_data import (
     WIND_DIRECTIONS,
@@ -25,6 +21,9 @@ from custom_components.hungaromet_weather_and_forecast.weather_data import (
     process_ten_minutes_data,
     ten_minute_gust_time,
 )
+
+from .entries import feed_coordinator
+from .rows import table
 
 
 def _hass():
@@ -42,7 +41,7 @@ def test_circular_mean_wraps_around_north():
 
 def test_direction_columns_use_circular_mean():
     """Test direction columns use circular mean."""
-    df = pd.DataFrame({"fxd": [355, 5], "fx": [355, 5]})
+    df = table({"fxd": [355, 5], "fx": [355, 5]})
 
     means = calculate_mean_values(df, ["fxd", "fx", "missing"])
 
@@ -53,23 +52,22 @@ def test_direction_columns_use_circular_mean():
 
 def test_clean_data_treats_text_minus_999_as_missing():
     """Test clean data treats text minus 999 as missing."""
-    df = pd.DataFrame({"fud": ["DDNy", "-999"], "t": [1.0, -999]})
+    df = table({"fud": ["DDNy", "-999"], "t": [1.0, -999]})
 
     result = clean_data(df)
 
-    assert result["fud"].isna().tolist() == [False, True]
-    assert result["t"].isna().tolist() == [False, True]
+    assert result == [{"fud": "DDNy", "t": 1.0}, {"fud": None, "t": None}]
 
 
 def test_prevailing_direction_takes_most_common_nearest_first_on_ties():
     """Test prevailing direction takes most common nearest first on ties."""
-    df = pd.DataFrame({"fud": ["Ny", "DDNy", "DDNy", "Ny", "É", None, "?"]})
+    df = table({"fud": ["Ny", "DDNy", "DDNy", "Ny", "É", None, "?"]})
     assert prevailing_direction(df) == "w"
 
-    df = pd.DataFrame({"fud": ["ÉÉK", "DDNy", "DDNy"]})
+    df = table({"fud": ["ÉÉK", "DDNy", "DDNy"]})
     assert prevailing_direction(df) == "ssw"
 
-    assert prevailing_direction(pd.DataFrame({"fud": [None, "?"]})) is None
+    assert prevailing_direction(table({"fud": [None, "?"]})) is None
 
 
 def test_every_hungarian_compass_point_has_an_english_key():
@@ -80,10 +78,10 @@ def test_every_hungarian_compass_point_has_an_english_key():
 
 def test_nearest_value_skips_missing():
     """Test nearest value skips missing."""
-    df = pd.DataFrame({"fxdat": [None, " 12:06", "23:50"]})
+    df = table({"fxdat": [None, " 12:06", "23:50"]})
 
     assert nearest_value(df, "fxdat") == "12:06"
-    assert nearest_value(pd.DataFrame({"fxdat": [None]}), "fxdat") is None
+    assert nearest_value(table({"fxdat": [None]}), "fxdat") is None
 
 
 def test_ten_minute_gust_time_is_local(monkeypatch):
@@ -91,7 +89,7 @@ def test_ten_minute_gust_time_is_local(monkeypatch):
     monkeypatch.setattr(
         dt_util, "DEFAULT_TIME_ZONE", dt_util.get_time_zone("Europe/Budapest")
     )
-    df = pd.DataFrame({
+    df = table({
         "Time": [202610270920, 202610270920],
         "fxm": [None, 14],
         "fxs": [None, 58],
@@ -99,7 +97,7 @@ def test_ten_minute_gust_time_is_local(monkeypatch):
 
     # Period 09:10-09:20 UTC, gust at minute 14, second 58 -> 09:14:58 UTC
     assert ten_minute_gust_time(df) == "10:14:58"
-    assert ten_minute_gust_time(df.iloc[:1]) is None
+    assert ten_minute_gust_time(df[:1]) is None
 
 
 @pytest.mark.parametrize(
@@ -118,7 +116,7 @@ def test_ten_minute_gust_time_at_period_edges(monkeypatch, time, fxm, fxs, expec
     monkeypatch.setattr(
         dt_util, "DEFAULT_TIME_ZONE", dt_util.get_time_zone("Europe/Budapest")
     )
-    df = pd.DataFrame({"Time": [time], "fxm": [fxm], "fxs": [fxs]})
+    df = table({"Time": [time], "fxm": [fxm], "fxs": [fxs]})
 
     assert ten_minute_gust_time(df) == expected
 
@@ -126,7 +124,7 @@ def test_ten_minute_gust_time_at_period_edges(monkeypatch, time, fxm, fxs, expec
 @patch("custom_components.hungaromet_weather_and_forecast.weather_data.fetch_data")
 def test_daily_feed_returns_new_measurements(mock_fetch):
     """Test daily feed returns new measurements."""
-    mock_fetch.return_value = pd.DataFrame({
+    mock_fetch.return_value = table({
         "Time": [20261025, 20261025],
         "StationNumber": [1, 2],
         "StationName": ["Near", "Far"],
@@ -155,7 +153,7 @@ def test_daily_feed_returns_new_measurements(mock_fetch):
 @patch("custom_components.hungaromet_weather_and_forecast.weather_data.fetch_data")
 def test_ten_minute_feed_keeps_gust_columns_in_raw_data(mock_fetch):
     """Test ten minute feed keeps gust columns in raw data."""
-    mock_fetch.return_value = pd.DataFrame({
+    mock_fetch.return_value = table({
         "Time": [202610270920],
         "StationNumber": [1],
         "StationName": ["Near"],
@@ -177,9 +175,8 @@ def test_ten_minute_feed_keeps_gust_columns_in_raw_data(mock_fetch):
 
 def test_prevailing_direction_sensor_is_a_translated_enum():
     """Test prevailing direction sensor is a translated enum."""
-    sensor = StationSensor(
-        SimpleNamespace(), FEEDS["daily"], Measurement("U", "fud"), "ssw", StationQuery()
-    )
+    coordinator = feed_coordinator("daily", data=({"fud": "ssw"}, []))
+    sensor = StationSensor(coordinator, Measurement("U", "fud"))
 
     assert sensor.device_class == SensorDeviceClass.ENUM
     assert sensor.options == list(WIND_DIRECTIONS.values())
@@ -189,8 +186,7 @@ def test_prevailing_direction_sensor_is_a_translated_enum():
 
 def test_other_daily_sensors_are_not_enums():
     """Test other daily sensors are not enums."""
-    sensor = StationSensor(
-        SimpleNamespace(), FEEDS["daily"], Measurement("P", "p0", "hPa"), 1014.0, StationQuery()
-    )
+    coordinator = feed_coordinator("daily", data=({"p0": 1014.0}, []))
+    sensor = StationSensor(coordinator, Measurement("P", "p0", "hPa"))
 
     assert sensor.device_class == SensorDeviceClass.ATMOSPHERIC_PRESSURE

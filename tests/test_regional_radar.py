@@ -9,12 +9,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import requests
 
-from custom_components.hungaromet_weather_and_forecast import national_radar, radar
+from custom_components.hungaromet_weather_and_forecast import image as platform
+from custom_components.hungaromet_weather_and_forecast import radar
 from custom_components.hungaromet_weather_and_forecast import regional_radar as rr
 from custom_components.hungaromet_weather_and_forecast.radar import frame_time
-from custom_components.hungaromet_weather_and_forecast.scope import EntryScope
 
-SCOPE = EntryScope("e1", "HungaroMet")
+from .entries import loaded_entry
+
 PAGE = (
     "<div style=\"background: url('/img/RccH/RccH20261028_1150.jpg')\"></div>"
     + "".join(f"Imgs[{i}]='RccH20261028_11{m:02d}.jpg';" for i, m in enumerate(range(0, 60, 5)))
@@ -38,7 +39,9 @@ def test_quadrant_for(lat, lon, quadrant):
 
 def test_radar_starts_without_an_animation():
     """Nothing is read from disk: unavailable until the first rebuild."""
-    entity = national_radar.HungarometRadarImage(SimpleNamespace(data={}, bus=MagicMock()))
+    entity = platform.HungarometRadarImage(
+        SimpleNamespace(data={}, bus=MagicMock()), loaded_entry()
+    )
     assert entity.available is False
     assert entity.image() is None
 
@@ -46,7 +49,7 @@ def test_radar_starts_without_an_animation():
 def test_radar_base_needs_a_frame_listing():
     """Test radar base needs a frame listing."""
     hass = SimpleNamespace(data={}, bus=MagicMock())
-    base = radar.RadarImage(hass, "base_device_base")
+    base = platform.RadarImage(hass, loaded_entry(), "base_device_base")
     assert base.unique_id == "base_device_base"
     with pytest.raises(NotImplementedError):
         base._rebuild_gif()
@@ -110,23 +113,16 @@ def test_latest_frame_urls():
 
 def _regional():
     hass = SimpleNamespace(data={}, bus=MagicMock(), async_add_executor_job=AsyncMock())
-    return rr.HungarometRegionalRadarImage(hass, SCOPE, "ne")
-
-
-def test_regional_radar_name_in_hungarian():
-    """Test regional radar name in hungarian."""
-    entity = _regional()
-    entity.hass.config = SimpleNamespace(language="hu")
-    assert entity.name == "Regionális radarkép"
+    return platform.HungarometRegionalRadarImage(hass, loaded_entry(), "ne")
 
 
 def test_regional_radar_entity():
     """Test regional radar entity."""
     entity = _regional()
     assert entity.unique_id == "e1_hungaromet_regional_radar"
-    # In Home Assistant's language (English by default)
-    assert entity.name == "Regional radar image"
-    assert entity.has_entity_name is False
+    # Named after its device, which the translations name
+    assert entity.has_entity_name is True
+    assert entity.name is None
     assert entity.should_poll is False
     assert entity.device_info["identifiers"] == {
         ("hungaromet_weather_and_forecast", "e1_hungaromet_regional_radar")
@@ -144,7 +140,7 @@ def test_regional_radar_lists_its_own_quadrant():
     """Test regional radar lists its own quadrant."""
     entity = _regional()
     with (
-        patch.object(rr, "latest_frame_urls", return_value=["a.jpg", "b.jpg"]) as listing,
+        patch.object(platform, "latest_frame_urls", return_value=["a.jpg", "b.jpg"]) as listing,
         patch.object(entity._frames, "update", return_value=("b.jpg", b"gif")) as update,
     ):
         assert entity._rebuild_gif() == ("b.jpg", b"gif")
@@ -155,7 +151,7 @@ def test_regional_radar_lists_its_own_quadrant():
 def test_regional_radar_network_error():
     """Test regional radar network error."""
     entity = _regional()
-    with patch.object(rr, "latest_frame_urls", side_effect=requests.ConnectionError("down")):
+    with patch.object(platform, "latest_frame_urls", side_effect=requests.ConnectionError("down")):
         assert entity._rebuild_gif() == (None, None)
     assert entity._problem == "the frames could not be listed: down"
 

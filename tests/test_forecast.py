@@ -3,6 +3,7 @@
 # The tests check the integration's internals
 # pylint: disable=protected-access
 
+import asyncio
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -13,8 +14,9 @@ from homeassistant.components.sensor import SensorDeviceClass
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from custom_components.hungaromet_weather_and_forecast import (
-    failures,
-    forecast,
+    coordinator as coordinators,
+    entity as entities,
+    settlement as settlements,
     options_flow,
     scheduler,
 )
@@ -26,6 +28,7 @@ from custom_components.hungaromet_weather_and_forecast.const import (
     LOCATION_SETTLEMENT,
 )
 from custom_components.hungaromet_weather_and_forecast.device_classes import WIND_DIRECTION
+from custom_components.hungaromet_weather_and_forecast.failures import FailureLog, FailureRecords
 from custom_components.hungaromet_weather_and_forecast.scope import EntryScope
 from custom_components.hungaromet_weather_and_forecast.weather_data import _get_reference_coords
 from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
@@ -45,11 +48,15 @@ from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     mean_bearing,
     parse_page,
 )
-from custom_components.hungaromet_weather_and_forecast.forecast_sensor import (
+from custom_components.hungaromet_weather_and_forecast.sensor import (
     FORECAST_SENSORS,
     ForecastSensor,
     forecast_sensors,
 )
+
+from custom_components.hungaromet_weather_and_forecast.data import HungaroMetData
+
+from .entries import loaded_entry
 
 NOW = datetime(2026, 10, 28, 10, 30, tzinfo=HUNGARY_TZ)
 ENTRY = SimpleNamespace(entry_id="e1", title="HungaroMet")
@@ -144,7 +151,6 @@ def test_parse_page_reads_every_row(data):
 
 def test_parse_page_conditions_and_wind(caplog):
     """Test parse page conditions and wind."""
-    failures._WARNED.clear()
     data = parse_page(PAGE, "Debrecen", NOW)
     assert [p.weather_condition for p in data.periods] == [
         "partlycloudy",
@@ -193,10 +199,10 @@ def test_condition_for(description, night, condition):
 
 def test_an_unknown_description_is_warned_about_once(caplog):
     """Test each unrecognised description is warned about only once."""
-    failures._WARNED.clear()
+    records = FailureRecords()
 
-    parse_page(PAGE, "Debrecen", NOW)
-    parse_page(PAGE, "Debrecen", NOW)
+    parse_page(PAGE, "Debrecen", NOW, records=records)
+    parse_page(PAGE, "Debrecen", NOW, records=records)
 
     assert caplog.text.count("Unknown met.hu weather 'furcsa idő'") == 1
 
@@ -438,17 +444,31 @@ async def test_lookup_settlement_takes_the_first_suggestion_otherwise():
     assert (await lookup_settlement(session, "Pec")).name == "Pécs"
 
 
-@pytest.mark.parametrize("json_data", [[], None, {"error": 1}])
-async def test_lookup_settlement_without_suggestions(json_data):
-    """Test lookup settlement without suggestions."""
-    assert await lookup_settlement(_session(json_data), "X") is None
+async def test_lookup_settlement_without_suggestions():
+    """An empty list means met.hu knows no such settlement."""
+    assert await lookup_settlement(_session([]), "X") is None
 
 
-async def test_lookup_settlement_with_an_unusable_suggestion(caplog):
-    """Test lookup settlement with an unusable suggestion."""
+@pytest.mark.parametrize(
+    "json_data", [None, {}, {"error": 1}, "", 0, ["Debrecen"]]
+)
+async def test_lookup_settlement_with_an_unreadable_answer(json_data):
+    """Any other answer without a list of settlements is an error."""
+    with pytest.raises(ValueError, match="not a list of settlements"):
+        await lookup_settlement(_session(json_data), "X")
+
+
+async def test_lookup_settlement_with_an_unusable_suggestion():
+    """A settlement with missing details is an error, not an unknown name."""
     session = _session([{"value": "X", "lat": "1", "lon": "2"}])
-    assert await lookup_settlement(session, "X") is None
-    assert "unusable settlement" in caplog.text
+    with pytest.raises(ValueError, match="unusable settlement"):
+        await lookup_settlement(session, "X")
+
+
+async def test_lookup_settlement_rejects_an_unexpected_list():
+    """A list of anything but settlements is an unreadable answer."""
+    with pytest.raises(ValueError, match="not a list of settlements"):
+        await lookup_settlement(_session(["maintenance"]), "X")
 
 
 async def test_fetch_forecast_posts_the_settlement():
@@ -471,15 +491,16 @@ async def test_fetch_forecast_posts_the_settlement():
 def test_stored_settlement_prefers_options():
     """Test stored settlement prefers options."""
     stored = {"name": "Pécs", "kod": "9", "lat": 46.0, "lon": 18.0}
-    entry = SimpleNamespace(data={CONF_FORECAST: forecast.settlement_to_dict(DEBRECEN)}, options={})
-    assert forecast.stored_settlement(entry) == DEBRECEN
+    saved = settlements.settlement_to_dict(DEBRECEN)
+    entry = SimpleNamespace(data={CONF_FORECAST: saved}, options={})
+    assert settlements.stored_settlement(entry) == DEBRECEN
 
     entry.options = {CONF_FORECAST: stored}
-    assert forecast.stored_settlement(entry).name == "Pécs"
+    assert settlements.stored_settlement(entry).name == "Pécs"
 
     entry.options = {CONF_FORECAST: None}
-    assert forecast.stored_settlement(entry) is None
-    assert forecast.settlement_to_dict(None) is None
+    assert settlements.stored_settlement(entry) is None
+    assert settlements.settlement_to_dict(None) is None
 
 
 @pytest.mark.parametrize(
@@ -519,7 +540,7 @@ def test_stored_settlement_prefers_options():
 def test_sensor_location(data, options, expected):
     """Test sensor location."""
     entry = SimpleNamespace(data=data, options=options)
-    assert forecast.sensor_location(entry) == expected
+    assert settlements.sensor_location(entry) == expected
 
 
 def test_reference_coords_prefer_the_given_location():
@@ -532,7 +553,17 @@ def test_reference_coords_prefer_the_given_location():
 @pytest.mark.parametrize(
     ("user_input", "resolved", "expected"),
     [
-        ({CONF_LOCATION: LOCATION_HOME}, (None, None), (None, {})),
+        (
+            {CONF_LOCATION: LOCATION_HOME, "devices": ["daily"]},
+            (None, None),
+            (None, {}),
+        ),
+        # Neither a device nor a forecast
+        (
+            {CONF_LOCATION: LOCATION_HOME},
+            (None, None),
+            (None, {"devices": "nothing_selected"}),
+        ),
         (
             {CONF_LOCATION: LOCATION_SETTLEMENT},
             (None, None),
@@ -566,15 +597,15 @@ async def test_validate_forecast(user_input, resolved, expected):
 async def test_resolve_settlement(name, lookup, expected):
     """Test resolve settlement."""
     with (
-        patch.object(forecast, "async_get_clientsession"),
-        patch.object(forecast, "lookup_settlement", lookup),
+        patch.object(settlements, "async_get_clientsession"),
+        patch.object(settlements, "lookup_settlement", lookup),
     ):
-        assert await forecast.async_resolve_settlement(MagicMock(), name) == expected
+        assert await settlements.async_resolve_settlement(MagicMock(), name) == expected
 
 
 def test_forecast_device_info():
     """Test forecast device info."""
-    info = forecast.forecast_device_info(EntryScope.from_entry(ENTRY))
+    info = entities.forecast_device_info(EntryScope.from_entry(ENTRY))
     assert info["identifiers"] == {("hungaromet_weather_and_forecast", "e1_hungaromet_forecast")}
     assert info["translation_key"] == "forecast"
     assert info["translation_placeholders"] == {"name": "HungaroMet"}
@@ -582,13 +613,15 @@ def test_forecast_device_info():
 
 
 def _coordinator():
-    coordinator = object.__new__(forecast.ForecastCoordinator)
+    coordinator = object.__new__(coordinators.ForecastCoordinator)
     coordinator.hass = MagicMock()
     coordinator.settlement = DEBRECEN
     coordinator.data = None  # nothing downloaded before
     coordinator._saved = None
     coordinator.last_update_success = True
     coordinator._store = MagicMock(async_save=AsyncMock(), async_load=AsyncMock())
+    coordinator._save_lock = asyncio.Lock()
+    coordinator._failure_log = FailureLog(MagicMock(), "Forecast")
     return coordinator
 
 
@@ -596,8 +629,8 @@ async def test_coordinator_update_fetches_forecast(data):
     """Test coordinator update fetches forecast."""
     coordinator = _coordinator()
     with (
-        patch.object(forecast, "async_get_clientsession"),
-        patch.object(forecast, "fetch_forecast", AsyncMock(return_value=data)),
+        patch.object(coordinators, "async_get_clientsession"),
+        patch.object(coordinators, "fetch_forecast", AsyncMock(return_value=data)),
     ):
         assert await coordinator._async_update_data() is data
 
@@ -607,8 +640,8 @@ async def test_coordinator_update_failure(error):
     """Test coordinator update failure."""
     coordinator = _coordinator()
     with (
-        patch.object(forecast, "async_get_clientsession"),
-        patch.object(forecast, "fetch_forecast", AsyncMock(side_effect=error)),
+        patch.object(coordinators, "async_get_clientsession"),
+        patch.object(coordinators, "fetch_forecast", AsyncMock(side_effect=error)),
         pytest.raises(UpdateFailed, match="^(x|TimeoutError)$"),
     ):
         await coordinator._async_update_data()
@@ -618,8 +651,8 @@ def test_coordinator_init():
     """Test coordinator init."""
     hass = MagicMock()
     entry = MagicMock()
-    with patch.object(forecast.ScheduledCoordinator, "__init__", return_value=None) as init:
-        coordinator = forecast.ForecastCoordinator(hass, entry, DEBRECEN)
+    with patch.object(coordinators.ScheduledCoordinator, "__init__", return_value=None) as init:
+        coordinator = coordinators.ForecastCoordinator(hass, entry, DEBRECEN)
     assert coordinator.settlement == DEBRECEN
     assert init.call_args.kwargs["update_interval"] is None
     assert init.call_args.kwargs["config_entry"] is entry
@@ -628,33 +661,36 @@ def test_coordinator_init():
 async def test_setup_forecast_without_settlement():
     """Test setup forecast without settlement."""
     entry = SimpleNamespace(data={}, options={})
-    assert await forecast.async_setup_forecast(MagicMock(), entry) is None
+    assert await coordinators.async_setup_forecast(MagicMock(), entry) is None
 
 
 async def test_setup_forecast_schedules_refreshes():
     """Test setup forecast schedules refreshes."""
     entry = MagicMock(
         entry_id="e1",
-        data={CONF_FORECAST: forecast.settlement_to_dict(DEBRECEN)},
+        data={CONF_FORECAST: settlements.settlement_to_dict(DEBRECEN)},
         options={},
+        runtime_data=HungaroMetData(name="HungaroMet"),
     )
-    hass = MagicMock(data={})
+    hass = MagicMock()
     coordinator = MagicMock(async_load_stored=AsyncMock())
     schedule = coordinator.schedule
     with (
-        patch.object(forecast, "ForecastCoordinator", return_value=coordinator),
-        patch.object(forecast, "async_setup_warnings", AsyncMock()) as setup_warnings,
+        patch.object(coordinators, "ForecastCoordinator", return_value=coordinator),
+        patch.object(coordinators, "async_setup_warnings", AsyncMock()) as setup_warnings,
     ):
-        assert await forecast.async_setup_forecast(hass, entry) is coordinator
+        assert await coordinators.async_setup_forecast(hass, entry) is coordinator
 
     unloads = [c.args[0] for c in entry.async_on_unload.call_args_list]
-    assert unloads[0] is schedule.start.return_value
+    # A download finishing after the unload is not saved
+    assert unloads[0] is coordinator.async_close
+    assert unloads[1] is schedule.start.return_value
     # The update service can refresh this forecast too
-    registered = hass.data["hungaromet_weather_and_forecast_updaters"]
+    registered = entry.runtime_data.updaters
     assert registered == {"e1_forecast": coordinator.async_update_now}
-    unloads[1]()
+    unloads[2]()
     assert registered == {}
-    assert len(unloads) == 2
+    assert len(unloads) == 3
     # The first download is left until the entities are added
     schedule.async_run_now.assert_not_called()
     # The forecast saved before a restart is loaded first
@@ -668,24 +704,24 @@ def test_coordinator_schedule():
     """Test coordinator schedule."""
     entry = SimpleNamespace(entry_id="e1")
     with (
-        patch.object(forecast.ScheduledCoordinator, "__init__", return_value=None),
-        patch.object(forecast, "forecast_store"),
-        patch.object(forecast, "RetryingSchedule") as cls,
+        patch.object(coordinators.ScheduledCoordinator, "__init__", return_value=None),
+        patch.object(coordinators, "forecast_store"),
+        patch.object(coordinators, "RetryingSchedule") as cls,
     ):
-        coordinator = forecast.ForecastCoordinator("hass", entry, DEBRECEN)
+        coordinator = coordinators.ForecastCoordinator("hass", entry, DEBRECEN)
 
     args, kwargs = cls.call_args
     assert args[:2] == ("hass", "forecast")
     # A bound method is a new object each time, so it is compared with ==
     # pylint: disable-next=comparison-with-callable
     assert args[2] == coordinator._async_scheduled_download
-    assert args[3] == forecast.FORECAST_RETRY_DELAY
-    assert kwargs == {"config_entry": entry, **forecast.FORECAST_SCHEDULE}
+    assert args[3] == coordinators.FORECAST_RETRY_DELAY
+    assert kwargs == {"config_entry": entry, **coordinators.FORECAST_SCHEDULE}
     assert coordinator.schedule is cls.return_value
 
 
 def _scheduled_coordinator(listeners):
-    coordinator = object.__new__(forecast.ForecastCoordinator)
+    coordinator = object.__new__(coordinators.ForecastCoordinator)
     coordinator._listeners = listeners
     coordinator.async_refresh = AsyncMock()
     coordinator.last_update_success = False
@@ -901,12 +937,11 @@ def test_weather_without_data():
 async def test_weather_platform_setup():
     """Test weather platform setup."""
     add = MagicMock()
-    hass = SimpleNamespace(data={"hungaromet_weather_and_forecast": {"abc": MagicMock()}})
+    forecast = MagicMock(config_entry=ENTRY)
 
-    await weather_platform.async_setup_entry(hass, SimpleNamespace(entry_id="abc"), add)
+    await weather_platform.async_setup_entry(None, loaded_entry(forecast=forecast), add)
     add.assert_called_once()
 
     add.reset_mock()
-    hass.data = {"hungaromet_weather_and_forecast": {"abc": None}}
-    await weather_platform.async_setup_entry(hass, SimpleNamespace(entry_id="abc"), add)
+    await weather_platform.async_setup_entry(None, loaded_entry(), add)
     add.assert_not_called()

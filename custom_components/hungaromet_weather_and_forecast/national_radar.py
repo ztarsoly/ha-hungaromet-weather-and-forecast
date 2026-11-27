@@ -1,34 +1,27 @@
-"""National radar animation from HungaroMet's open-data composite images.
-
-The national radar entry has this one image; it is the same everywhere, so its
-device is not scoped to an entry.
-"""
+"""The frames of HungaroMet's open-data national radar composite."""
 
 import requests
-from bs4 import BeautifulSoup
-from bs4.element import Tag
 
-from .const import DOMAIN, RADAR_BASE_URL
-from .radar import FRAME_COUNT, RADAR_WEB_PAGE, REQUEST_TIMEOUT, RadarImage, localized
+from .html_tree import parse_html
+from .radar import FRAME_COUNT, REQUEST_TIMEOUT, download_image
 
-# The radar images' own names, in Home Assistant's language. Translated entity
-# names always follow the device name ("National Radar Image National radar
-# image"), so these are picked here instead.
-NATIONAL_RADAR_NAMES = {"en": "National radar image", "hu": "Országos radarkép"}
+
+def newest_frame_downloads(base_url):
+    """Return whether the newest frame listed at base_url can be downloaded.
+
+    Raises OSError (a request's errors included) or ValueError if the frames
+    cannot be listed or the frame is no image.
+    """
+    urls = get_latest_image_urls(base_url, 1)
+    return bool(urls) and download_image(urls[0]) is not None
 
 
 def get_latest_image_urls(base_url, count=FRAME_COUNT):
     """Return the URLs of the newest PNG frames listed at base_url, oldest first."""
     response = requests.get(base_url, timeout=REQUEST_TIMEOUT)
     response.raise_for_status()
-    soup = BeautifulSoup(response.text, "html.parser")
-
-    png_files = []
-    for a in soup.find_all("a"):
-        if isinstance(a, Tag):
-            href = a.get("href")
-            if isinstance(href, str) and href.endswith(".png"):
-                png_files.append(href)
+    links = (a.get("href", "") for a in parse_html(response.text).find_all("a"))
+    png_files = [href for href in links if href.endswith(".png")]
 
     # Remove duplicates while preserving order
     seen = set()
@@ -42,34 +35,3 @@ def get_latest_image_urls(base_url, count=FRAME_COUNT):
     latest_files = unique_png_files[:count]
     latest_files.sort()
     return [base_url + fname for fname in latest_files]
-
-
-DEVICE_ID = "hungaromet_radar_gif"
-
-
-class HungarometRadarImage(RadarImage):
-    """The national radar image."""
-
-    _label = "HungaroMet national radar"
-
-    def __init__(self, hass):
-        # Made from the device and an old name, so it must not change
-        super().__init__(hass, f"{DEVICE_ID}_hungaromet_radar")
-
-    @property
-    def name(self):
-        return localized(self.hass, NATIONAL_RADAR_NAMES)
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, DEVICE_ID)},
-            "translation_key": "radar",
-            "manufacturer": "HungaroMet",
-            "model": "National radar image",
-            "entry_type": "service",
-            "configuration_url": RADAR_WEB_PAGE,
-        }
-
-    def _list_frames(self):
-        return get_latest_image_urls(RADAR_BASE_URL)

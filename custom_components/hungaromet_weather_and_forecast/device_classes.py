@@ -6,6 +6,7 @@ temperature class to appear next to other temperatures.
 """
 
 from homeassistant.components.sensor import SensorDeviceClass
+from homeassistant.const import UnitOfIrradiance
 
 # Home Assistant versions before the wind direction class show the bearings
 # without a device class
@@ -17,8 +18,8 @@ DEVICE_CLASSES = {
         ("t", "ta", "tn", "tx", "tsn", "tsn24", "tviz", "et5", "et10", "et20", "et50", "et100"),
         SensorDeviceClass.TEMPERATURE,
     ),
-    # Evaporation and the water balance are millimetres of water too
-    **dict.fromkeys(("r", "rau", "upe", "water_balance"), SensorDeviceClass.PRECIPITATION),
+    # Evaporation is millimetres of water too
+    **dict.fromkeys(("r", "rau", "upe"), SensorDeviceClass.PRECIPITATION),
     "u": SensorDeviceClass.HUMIDITY,
     "p": SensorDeviceClass.PRESSURE,
     "p0": SensorDeviceClass.ATMOSPHERIC_PRESSURE,
@@ -28,6 +29,10 @@ DEVICE_CLASSES = {
 }
 
 
-def device_class_for(base_key: str) -> SensorDeviceClass | None:
+def device_class_for(base_key: str, unit: str | None) -> SensorDeviceClass | None:
     """Return the device class of a station measurement, if it has one."""
+    # Only the 10-minute feed gives global radiation as an irradiance; the daily
+    # and hourly sums have no device class
+    if unit == UnitOfIrradiance.WATTS_PER_SQUARE_METER:
+        return SensorDeviceClass.IRRADIANCE
     return DEVICE_CLASSES.get(base_key)

@@ -1,4 +1,4 @@
-"""Tests for the radar frames and animations (radar.py, national_radar.py)."""
+"""Tests for the radar frames and animations (radar.py, national_radar.py, image.py)."""
 
 # The tests check the integration's internals
 # pylint: disable=protected-access
@@ -7,12 +7,14 @@ from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 
-from PIL import Image
+import pytest
 import requests
+from PIL import Image
 
+from custom_components.hungaromet_weather_and_forecast.image import HungarometRadarImage
 from custom_components.hungaromet_weather_and_forecast.national_radar import (
-    HungarometRadarImage,
     get_latest_image_urls,
+    newest_frame_downloads,
 )
 from custom_components.hungaromet_weather_and_forecast.radar import (
     RadarFrames,
@@ -20,7 +22,10 @@ from custom_components.hungaromet_weather_and_forecast.radar import (
     download_image,
 )
 
+from .entries import loaded_entry
+
 DOWNLOAD_IMAGE = "custom_components.hungaromet_weather_and_forecast.radar.download_image"
+NATIONAL = "custom_components.hungaromet_weather_and_forecast.national_radar"
 
 
 @patch("custom_components.hungaromet_weather_and_forecast.national_radar.requests.get")
@@ -268,16 +273,40 @@ def test_newest_six_frames_by_default(mock_get):
     assert [u[-8:-4] for u in urls] == ["1010", "1015", "1020", "1025", "1030", "1035"]
 
 
+@pytest.mark.parametrize("image", [Image.new("RGB", (1, 1)), None])
+@patch("custom_components.hungaromet_weather_and_forecast.national_radar.requests.get")
+def test_newest_frame_downloads(mock_get, image):
+    """Test only the newest listed frame is tried."""
+    links = "".join(f'<a href="f_20261030_10{m:02d}.png">x</a>' for m in (5, 10, 0))
+    mock_get.return_value = Mock(text=links)
+
+    with patch(f"{NATIONAL}.download_image", return_value=image) as download:
+        assert newest_frame_downloads("http://x/") is (image is not None)
+
+    download.assert_called_once_with("http://x/f_20261030_1010.png")
+
+
+@patch("custom_components.hungaromet_weather_and_forecast.national_radar.requests.get")
+def test_newest_frame_without_a_listed_one(mock_get):
+    """Test there is no frame to download from an empty listing."""
+    mock_get.return_value = Mock(text="")
+
+    with patch(f"{NATIONAL}.download_image") as download:
+        assert newest_frame_downloads("http://x/") is False
+
+    download.assert_not_called()
+
+
 def test_create_gif_empty_images_list():
     """Test create_gif handles empty image list."""
     assert create_gif([]) is None
 
 
 def _national():
-    return HungarometRadarImage(SimpleNamespace(data={}, bus=MagicMock()))
+    return HungarometRadarImage(SimpleNamespace(data={}, bus=MagicMock()), loaded_entry())
 
 
-@patch("custom_components.hungaromet_weather_and_forecast.national_radar.get_latest_image_urls")
+@patch("custom_components.hungaromet_weather_and_forecast.image.get_latest_image_urls")
 def test_national_rebuild_uses_the_open_data_listing(mock_get_urls):
     """Test national rebuild uses the open data listing."""
     mock_get_urls.return_value = _urls(0, 5)
@@ -292,7 +321,7 @@ def test_national_rebuild_uses_the_open_data_listing(mock_get_urls):
     assert _durations(gif) == [1000, 2000]
 
 
-@patch("custom_components.hungaromet_weather_and_forecast.national_radar.get_latest_image_urls")
+@patch("custom_components.hungaromet_weather_and_forecast.image.get_latest_image_urls")
 def test_rebuild_without_listed_frames(mock_get_urls):
     """Test rebuild without listed frames."""
     mock_get_urls.return_value = []
@@ -302,7 +331,7 @@ def test_rebuild_without_listed_frames(mock_get_urls):
     assert image._problem == "no frames are listed"
 
 
-@patch("custom_components.hungaromet_weather_and_forecast.national_radar.get_latest_image_urls")
+@patch("custom_components.hungaromet_weather_and_forecast.image.get_latest_image_urls")
 def test_rebuild_handles_network_error(mock_get_urls):
     """Test rebuild handles network error."""
     mock_get_urls.side_effect = requests.RequestException("Network error")

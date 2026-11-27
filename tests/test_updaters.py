@@ -1,90 +1,133 @@
-"""Tests for the update service and what it refreshes."""
+"""Tests for the update action and what it refreshes."""
 
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from homeassistant.config_entries import ConfigEntryState
+from homeassistant.exceptions import ServiceValidationError
 
-from custom_components.hungaromet_weather_and_forecast import async_setup, updaters
+from custom_components.hungaromet_weather_and_forecast import (
+    async_setup,
+    services,
+    updaters,
+)
 from custom_components.hungaromet_weather_and_forecast import weather as weather_platform
 from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     ForecastData,
     ForecastPeriod,
 )
-from custom_components.hungaromet_weather_and_forecast.forecast_sensor import (
-    forecast_sensors,
-)
+from custom_components.hungaromet_weather_and_forecast.sensor import forecast_sensors
+
+from .entries import loaded_entry
 
 ENTRY = SimpleNamespace(entry_id="e1", title="HungaroMet")
 
 
+def _entry(state=ConfigEntryState.LOADED):
+    entry = loaded_entry()
+    entry.state = state
+    return entry
+
+
+def _hass(*entries):
+    hass = MagicMock()
+    hass.config_entries.async_entries.return_value = list(entries)
+    return hass
+
+
 def test_register_and_remove_updaters():
     """Test register and remove updaters."""
-    hass = SimpleNamespace(data={})
+    entry = _entry()
     first, second = AsyncMock(), AsyncMock()
 
-    remove_first = updaters.async_register_updater(hass, "a", first)
-    updaters.async_register_updater(hass, "b", second)
-    assert hass.data[updaters.UPDATERS] == {"a": first, "b": second}
+    remove_first = updaters.async_register_updater(entry, "a", first)
+    updaters.async_register_updater(entry, "b", second)
+    assert entry.runtime_data.updaters == {"a": first, "b": second}
 
     remove_first()
     remove_first()  # removing twice is harmless
-    assert hass.data[updaters.UPDATERS] == {"b": second}
+    assert entry.runtime_data.updaters == {"b": second}
 
 
 def test_removing_does_not_drop_a_newer_updater_with_the_same_key():
     """Test removing does not drop a newer updater with the same key."""
-    hass = SimpleNamespace(data={})
+    entry = _entry()
     old, new = AsyncMock(), AsyncMock()
-    remove_old = updaters.async_register_updater(hass, "radar", old)
-    updaters.async_register_updater(hass, "radar", new)  # e.g. after a reload
+    remove_old = updaters.async_register_updater(entry, "radar", old)
+    updaters.async_register_updater(entry, "radar", new)  # e.g. added again
 
     remove_old()
 
-    assert hass.data[updaters.UPDATERS] == {"radar": new}
+    assert entry.runtime_data.updaters == {"radar": new}
 
 
 async def test_update_all_runs_everything_even_after_a_failure(caplog):
-    """Test update all runs everything even after a failure."""
-    hass = SimpleNamespace(data={})
+    """Test update all runs every loaded entry's updates, even after a failure."""
+    first, second = _entry(), _entry()
     feeds = AsyncMock(side_effect=RuntimeError("met.hu down"))
     forecast = AsyncMock()
     radar = AsyncMock()
-    for key, update in (("feeds", feeds), ("forecast", forecast), ("radar", radar)):
-        updaters.async_register_updater(hass, key, update)
+    updaters.async_register_updater(first, "feeds", feeds)
+    updaters.async_register_updater(first, "forecast", forecast)
+    updaters.async_register_updater(second, "radar", radar)
+    hass = _hass(first, second)
 
     await updaters.async_update_all(hass)
 
+    hass.config_entries.async_entries.assert_called_once_with(
+        "hungaromet_weather_and_forecast"
+    )
     feeds.assert_awaited_once()
     forecast.assert_awaited_once()
     radar.assert_awaited_once()
     assert "Updating feeds failed" in caplog.text
 
 
-async def test_update_all_with_nothing_registered():
-    """Test update all with nothing registered."""
-    await updaters.async_update_all(SimpleNamespace(data={}))
+async def test_update_all_leaves_out_entries_that_are_not_loaded():
+    """An entry that is not loaded has nothing to update."""
+    # Without runtime data, like a disabled entry
+    disabled = SimpleNamespace(state=ConfigEntryState.NOT_LOADED)
+
+    await updaters.async_update_all(_hass(disabled))
+    await updaters.async_update_all(_hass())
 
 
-async def test_update_service_runs_every_updater():
-    """Test update service runs every updater."""
-    hass = MagicMock(data={})
-    update = AsyncMock()
-    updaters.async_register_updater(hass, "x", update)
-
-    updaters.async_register_update_service(hass)
-
+def _update_action(hass):
+    """Register the integration's actions; return the update action."""
+    services.async_setup_services(hass)
     domain, service, handler = hass.services.async_register.call_args.args
     assert (domain, service) == ("hungaromet_weather_and_forecast", "update")
-    await handler(None)
+    return handler
+
+
+async def test_update_action_runs_every_updater():
+    """Test the update action runs every updater."""
+    entry = _entry()
+    update = AsyncMock()
+    updaters.async_register_updater(entry, "x", update)
+
+    await _update_action(_hass(entry))(None)
+
     update.assert_awaited_once()
 
 
-async def test_setup_registers_the_update_service():
-    """Test setup registers the update service."""
+async def test_update_action_fails_without_a_loaded_entry():
+    """With no loaded entry the action reports that nothing can be updated."""
+    disabled = SimpleNamespace(state=ConfigEntryState.NOT_LOADED)
+
+    with pytest.raises(ServiceValidationError) as error:
+        await _update_action(_hass(disabled))(None)
+
+    assert error.value.translation_domain == "hungaromet_weather_and_forecast"
+    assert error.value.translation_key == "no_loaded_entry"
+
+
+async def test_setup_registers_the_actions():
+    """Test setup registers the actions."""
     hass = MagicMock(async_add_executor_job=AsyncMock())
     with patch(
-        "custom_components.hungaromet_weather_and_forecast.async_register_update_service"
+        "custom_components.hungaromet_weather_and_forecast.async_setup_services"
     ) as register:
         assert await async_setup(hass, {}) is True
     register.assert_called_once_with(hass)

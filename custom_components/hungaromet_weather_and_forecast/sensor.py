@@ -1,191 +1,372 @@
-"""Sensor platform: an entry's weather station sensors and forecast sensors."""
+"""Sensor platform: an entry's weather station, forecast and warning sensors.
+
+Each observation feed has its own device. A station sensor shows one
+measurement, averaged over the stations near the entry's location; the feed's
+Stations sensor lists those stations. The forecast sensors and the alert and
+warning sensors are for the entry's forecast settlement.
+"""
+
+from __future__ import annotations
 
 import logging
-from collections.abc import Callable
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
-from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
-
-from .const import CONF_DISTANCE_KM, DEFAULT_DISTANCE_KM, DOMAIN
-from .forecast import sensor_location
-from .forecast_sensor import forecast_sensors
-from .scheduler import RetryingSchedule, async_retry_every_minute
-from .scope import EntryScope
-from .station_sensor import (
-    FEEDS,
-    MEASUREMENTS,
-    FeedSensor,
-    StationQuery,
-    StationSensor,
-    StationsSensor,
-    async_download_feed,
-    reading,
+from homeassistant.components.sensor import (
+    SensorDeviceClass,
+    SensorEntity,
+    SensorEntityDescription,
 )
-from .updaters import async_register_updater
-from .warning_sensor import warning_sensors
+from homeassistant.const import (
+    DEGREE,
+    PERCENTAGE,
+    UnitOfPrecipitationDepth,
+    UnitOfPressure,
+    UnitOfSpeed,
+    UnitOfTemperature,
+)
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.update_coordinator import CoordinatorEntity
+
+from .coordinator import FeedCoordinator, ForecastCoordinator, WarningCoordinator
+from .data import HungaroMetConfigEntry
+from .device_classes import WIND_DIRECTION, device_class_for
+from .entity import HungaroMetEntity, HungaroMetForecastEntity
+from .failures import FailureLog
+from .forecast_scraper import (
+    CONDITION_STATES,
+    WIND_DIRECTION_STATES,
+    WIND_STRENGTH_STATES,
+    ForecastData,
+    ForecastValues,
+)
+from .scope import device_info, scoped_id
+from .stations import MEASUREMENTS, Measurement, reading
+from .warning_scraper import LEVEL_STATES, highest_level, in_force
+from .weather_data import WIND_DIRECTIONS
 
 _LOGGER = logging.getLogger(__package__)
 
+# Fields shown in the short "stations" list; "raw_data" keeps every column
+STATION_FIELDS = ("StationNumber", "StationName", "Latitude", "Longitude", "Elevation")
 
-def _feed_sensors(sensors: list[FeedSensor], data_type: str) -> list[FeedSensor]:
-    """Return the added sensors, value and Stations sensors, that show a feed."""
+# These read today's summary instead of the current 6-hour period
+DAILY_KEYS = frozenset({"temperature_min", "temperature_max"})
+
+
+def _measurement(key, unit, device_class=None):
+    # No state class: forecasts are kept out of the long-term statistics
+    return SensorEntityDescription(
+        key=key,
+        translation_key=f"forecast_{key}",
+        native_unit_of_measurement=unit,
+        device_class=device_class,
+        suggested_display_precision=1,
+    )
+
+
+FORECAST_SENSORS = (
+    _measurement("temperature", UnitOfTemperature.CELSIUS, SensorDeviceClass.TEMPERATURE),
+    _measurement(
+        "temperature_min", UnitOfTemperature.CELSIUS, SensorDeviceClass.TEMPERATURE
+    ),
+    _measurement(
+        "temperature_max", UnitOfTemperature.CELSIUS, SensorDeviceClass.TEMPERATURE
+    ),
+    _measurement(
+        "precipitation",
+        UnitOfPrecipitationDepth.MILLIMETERS,
+        SensorDeviceClass.PRECIPITATION,
+    ),
+    _measurement("cloud_cover", PERCENTAGE),
+    _measurement("wind_speed", UnitOfSpeed.KILOMETERS_PER_HOUR, SensorDeviceClass.WIND_SPEED),
+    _measurement("wind_gust", UnitOfSpeed.KILOMETERS_PER_HOUR, SensorDeviceClass.WIND_SPEED),
+    _measurement("wind_bearing", DEGREE, WIND_DIRECTION),
+    # met.hu forecasts the sea-level pressure, like the stations' p0
+    _measurement(
+        "pressure", UnitOfPressure.HPA, SensorDeviceClass.ATMOSPHERIC_PRESSURE
+    ),
+    SensorEntityDescription(
+        key="wind_direction",
+        translation_key="forecast_wind_direction",
+        device_class=SensorDeviceClass.ENUM,
+        options=WIND_DIRECTION_STATES,
+    ),
+    # Worked out from the mean wind speed; met.hu gives no wind strength
+    SensorEntityDescription(
+        key="wind_strength",
+        translation_key="forecast_wind_strength",
+        device_class=SensorDeviceClass.ENUM,
+        options=WIND_STRENGTH_STATES,
+    ),
+    SensorEntityDescription(
+        key="weather_condition",
+        translation_key="forecast_weather_condition",
+        device_class=SensorDeviceClass.ENUM,
+        options=CONDITION_STATES,
+    ),
+    SensorEntityDescription(
+        key="issued",
+        translation_key="forecast_issued",
+        device_class=SensorDeviceClass.TIMESTAMP,
+    ),
+)
+
+
+def _today(data: ForecastData) -> ForecastValues | None:
+    """Return the daily summary for the current period's day."""
+    if data.current is None or data.current.forecast_time is None:
+        return None
+    day = data.current.forecast_time.date()
+    return next(
+        (d for d in data.daily if d.forecast_time and d.forecast_time.date() == day),
+        None,
+    )
+
+
+# The key is also the Warnings field and the attribute listing what is in force
+WARNING_SENSORS = (
+    SensorEntityDescription(
+        key="alerts",
+        translation_key="forecast_alert",
+        device_class=SensorDeviceClass.ENUM,
+        options=LEVEL_STATES,
+    ),
+    SensorEntityDescription(
+        key="warnings",
+        translation_key="forecast_warning",
+        device_class=SensorDeviceClass.ENUM,
+        options=LEVEL_STATES,
+    ),
+)
+
+
+class ForecastSensor(
+    HungaroMetForecastEntity, CoordinatorEntity[ForecastCoordinator], SensorEntity
+):
+    """One value of the settlement forecast."""
+
+    entity_description: SensorEntityDescription
+
+    def __init__(
+        self, coordinator: ForecastCoordinator, description: SensorEntityDescription
+    ) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._join_forecast_device(coordinator, description.key)
+
+    @property
+    def available(self) -> bool:
+        """Be unavailable without a value.
+
+        A failed download leaves the last forecast to take the value from.
+        """
+        return self.native_value is not None
+
+    @property
+    def native_value(self):
+        data = self.coordinator.data
+        if data is None:
+            return None
+        key = self.entity_description.key
+        if key == "issued":
+            return data.issued
+        source = _today(data) if key in DAILY_KEYS else data.current
+        return getattr(source, key, None) if source else None
+
+
+class WarningSensor(
+    HungaroMetForecastEntity, CoordinatorEntity[WarningCoordinator], SensorEntity
+):
+    """The highest alert or warning level in force, with the phenomena in force."""
+
+    entity_description: SensorEntityDescription
+
+    def __init__(
+        self, coordinator: WarningCoordinator, description: SensorEntityDescription
+    ) -> None:
+        super().__init__(coordinator)
+        self.entity_description = description
+        self._join_forecast_device(coordinator, description.key)
+
+    @property
+    def available(self) -> bool:
+        """Be unavailable after a failed download, or without levels."""
+        return super().available and self.native_value is not None
+
+    def _levels(self) -> dict[str, str] | None:
+        data = self.coordinator.data
+        return getattr(data, self.entity_description.key) if data else None
+
+    @property
+    def native_value(self) -> str | None:
+        levels = self._levels()
+        return highest_level(levels) if levels is not None else None
+
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        """List the phenomena in force, named in Home Assistant's language."""
+        levels = self._levels()
+        if levels is None:
+            return None
+        return {
+            self.entity_description.key: in_force(levels, self.hass.config.language)
+        }
+
+
+class FeedSensor(HungaroMetEntity, CoordinatorEntity[FeedCoordinator], SensorEntity):
+    """A sensor of one feed's device; unavailable after a failed download."""
+
+    def __init__(self, coordinator: FeedCoordinator) -> None:
+        super().__init__(coordinator)
+        self._feed = coordinator.feed
+        self._query = coordinator.query
+
+    @property
+    def device_info(self):
+        return device_info(
+            self._query.scope, self._feed.device_id, self._feed.key, self._feed.model
+        )
+
+
+class StationSensor(FeedSensor):
+    """One measurement of a feed, averaged over the selected stations."""
+
+    def __init__(
+        self, coordinator: FeedCoordinator, measurement: Measurement
+    ) -> None:
+        super().__init__(coordinator)
+        self._measurement = measurement
+        self._time_log = FailureLog(
+            _LOGGER,
+            f"Reading the {self._feed.key} measurement time",
+            self._query.records,
+        )
+
+    @property
+    def _base_key(self) -> str:
+        return self._measurement.key.removeprefix("average_").lower()
+
+    @property
+    def unique_id(self) -> str:
+        name = self._measurement.name.lower().replace(" ", "_")
+        return scoped_id(self._query.scope, f"{self._feed.device_id}_{name}")
+
+    @property
+    def translation_key(self) -> str:
+        return f"{self._feed.key}_{self._base_key}"
+
+    @property
+    def device_class(self) -> SensorDeviceClass | None:
+        if self._base_key == "time":
+            return self._feed.time_class
+        if self._base_key == "fud":
+            # Compass points, translated through the entity's state translations
+            return SensorDeviceClass.ENUM
+        return device_class_for(self._base_key, self._measurement.unit)
+
+    @property
+    def options(self) -> list[str] | None:
+        return list(WIND_DIRECTIONS.values()) if self._base_key == "fud" else None
+
+    @property
+    def native_unit_of_measurement(self) -> str | None:
+        return self._measurement.unit
+
+    @property
+    def suggested_display_precision(self) -> int | None:
+        # Only the numeric measurements have a unit
+        return 1 if self._measurement.unit else None
+
+    @property
+    def available(self) -> bool:
+        """Be unavailable, not unknown, without a value."""
+        return super().available and self.native_value is not None
+
+    @property
+    def native_value(self):
+        data = self.coordinator.data
+        value = reading(data[0], self._measurement.key) if data else None
+        if self._base_key == "time" and value:
+            return self._time(value)
+        if isinstance(value, (int, float)):
+            return round(value, 2)
+        return value
+
+    def _time(self, value: str) -> date | datetime | None:
+        """Return the measurement time: a date (daily) or a UTC time."""
+        parse = (
+            date if self._feed.time_class == SensorDeviceClass.DATE else datetime
+        ).fromisoformat
+        try:
+            time = parse(value)
+        except ValueError as err:
+            self._time_log.failed(err)
+            return None
+        self._time_log.succeeded()
+        return time
+
+
+class StationsSensor(FeedSensor):
+    """The stations whose measurements a feed's sensors average."""
+
+    _attr_translation_key = "stations"
+    # Raw rows can exceed the recorder's attribute size limit and change constantly
+    _unrecorded_attributes = frozenset({"raw_data"})
+
+    @property
+    def unique_id(self) -> str:
+        # On the daily device's prefix, so existing entities keep their IDs
+        return scoped_id(self._query.scope, f"hungaromet_weather_station_info_{self._feed.key}")
+
+    def _rows(self) -> list[dict]:
+        data = self.coordinator.data
+        return data[1] if data else []
+
+    @property
+    def native_value(self) -> int:
+        return len(self._rows())
+
+    @property
+    def extra_state_attributes(self):
+        rows = self._rows()
+        return {
+            "stations": [
+                {field: row.get(field) for field in STATION_FIELDS} for row in rows
+            ],
+            "raw_data": rows,
+        }
+
+
+def forecast_sensors(coordinator: ForecastCoordinator) -> list[ForecastSensor]:
+    """Create every forecast sensor for a coordinator."""
+    return [ForecastSensor(coordinator, d) for d in FORECAST_SENSORS]
+
+
+def warning_sensors(coordinator: WarningCoordinator) -> list[WarningSensor]:
+    """Create the alert and warning sensors."""
+    return [WarningSensor(coordinator, d) for d in WARNING_SENSORS]
+
+
+def station_sensors(coordinator: FeedCoordinator) -> list[FeedSensor]:
+    """Create a feed's measurement sensors and its Stations sensor."""
     return [
-        s for s in sensors if s.hass is not None and s.added and s.feed.key == data_type
+        *(StationSensor(coordinator, m) for m in MEASUREMENTS[coordinator.feed.key]),
+        StationsSensor(coordinator),
     ]
 
 
-async def _async_update_feed(hass, sensors, data_type, query: StationQuery):
-    """Download one feed once and update every added sensor that shows it.
-
-    Returns the feed's observation time, or None if nothing was updated.
-    """
-    feed_sensors = _feed_sensors(sensors, data_type)
-    if not feed_sensors:
-        _LOGGER.debug(
-            "HungaroMet: skipping %s update because no active entities are enabled",
-            data_type,
-        )
-        return None
-
-    result = await async_download_feed(hass, FEEDS[data_type], query)
-    if result is None:
-        for sensor in feed_sensors:
-            sensor.mark_download_failed()
-            sensor.async_write_ha_state()
-        return None
-
-    data, stations = result
-    for sensor in feed_sensors:
-        sensor.show(data, stations)
-        sensor.async_write_ha_state()
-    return data.get("time")
-
-
-# When each feed is checked (UTC, matching HungaroMet's publishing times) and how
-# long to wait before trying again while its data is not fresh yet
-FEED_SCHEDULES = {
-    "daily": ({"hour": 9, "minute": 35, "second": 59}, timedelta(hours=1)),
-    "hourly": ({"minute": 20, "second": 59}, timedelta(minutes=10)),
-    "ten_minutes": ({"minute": "/10", "second": 59}, timedelta(minutes=1)),
-}
-
-
-def _is_fresh(data_type, observed, scheduled_for):
-    """Return whether a feed's observation time is the one due at a scheduled run.
-
-    Daily files hold yesterday, hourly files the hour 20 minutes before they are
-    published, and 10-minute files the slot 10 minutes before they are published.
-    """
-    if data_type == "daily":
-        return date.fromisoformat(observed) >= scheduled_for.date() - timedelta(days=1)
-    if data_type == "hourly":
-        expected = scheduled_for.replace(minute=0, second=0, microsecond=0)
-    else:
-        expected = scheduled_for.replace(
-            minute=scheduled_for.minute - scheduled_for.minute % 10,
-            second=0,
-            microsecond=0,
-        ) - timedelta(minutes=10)
-    return datetime.fromisoformat(observed) >= expected
-
-
-def _async_start_feed_schedules(hass, sensors, query: StationQuery, config_entry=None):
-    """Start each feed's schedule and return the functions that stop them."""
-    stops = []
-    for data_type, (pattern, retry_delay) in FEED_SCHEDULES.items():
-
-        async def job(scheduled_for, data_type=data_type):
-            if not _feed_sensors(sensors, data_type):
-                return True
-            observed = await _async_update_feed(hass, sensors, data_type, query)
-            return observed is not None and _is_fresh(
-                data_type, observed, scheduled_for
-            )
-
-        schedule = RetryingSchedule(
-            hass, data_type, job, retry_delay, config_entry=config_entry, **pattern
-        )
-        stops.append(schedule.start())
-    return stops
-
-
-async def _async_station_sensors(
-    hass, query: StationQuery
-) -> tuple[list[FeedSensor], list[str]]:
-    """Download each feed once and create its sensors with the first values.
-
-    A feed whose download fails still gets its sensors, unavailable until a
-    download works. Returns the sensors and the keys of the feeds that failed.
-    """
-    sensors: list[FeedSensor] = []
-    failed: list[str] = []
-    for feed in FEEDS.values():
-        result = await async_download_feed(hass, feed, query)
-        if result is None:
-            failed.append(feed.key)
-        data, stations = result or ({}, [])
-        feed_sensors: list[FeedSensor] = [
-            StationSensor(hass, feed, measurement, reading(data, measurement.key), query)
-            for measurement in MEASUREMENTS[feed.key]
-        ]
-        feed_sensors.append(StationsSensor(hass, feed, stations, query))
-        if feed.key in failed:
-            for sensor in feed_sensors:
-                sensor.mark_download_failed()
-        sensors.extend(feed_sensors)
-    return sensors, failed
-
-
-def _async_retry_first_download(
-    hass, sensors, data_type, query: StationQuery
-) -> Callable[[], None]:
-    """Download a feed every minute until it works, besides its schedule.
-
-    The schedule's next run may be hours away (the daily feed's is once a day).
-    Returns a function that stops the retries.
-    """
-
-    async def attempt() -> bool:
-        if not _feed_sensors(sensors, data_type):
-            return True
-        return await _async_update_feed(hass, sensors, data_type, query) is not None
-
-    return async_retry_every_minute(hass, attempt)
-
-
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities
+    hass: HomeAssistant, entry: HungaroMetConfigEntry, async_add_entities
 ):
     """Add an entry's forecast sensors and weather station sensors."""
-    # Forecast sensors first, so they do not depend on the station data loading
-    if forecast := hass.data.get(DOMAIN, {}).get(entry.entry_id):
+    if forecast := entry.runtime_data.forecast:
         async_add_entities(
             [*forecast_sensors(forecast), *warning_sensors(forecast.warnings)]
         )
-
-    query = StationQuery(
-        distance_km=entry.options.get(
-            CONF_DISTANCE_KM, entry.data.get(CONF_DISTANCE_KM, DEFAULT_DISTANCE_KM)
-        ),
-        location=sensor_location(entry),
-        scope=EntryScope.from_entry(entry),
+    async_add_entities(
+        [
+            sensor
+            for coordinator in entry.runtime_data.feeds.values()
+            for sensor in station_sensors(coordinator)
+        ]
     )
-    sensors, failed = await _async_station_sensors(hass, query)
-    async_add_entities(sensors, True)
-    for data_type in failed:
-        entry.async_on_unload(
-            _async_retry_first_download(hass, sensors, data_type, query)
-        )
-
-    async def update_entry():
-        for data_type in FEEDS:
-            await _async_update_feed(hass, sensors, data_type, query)
-
-    # The update service refreshes these feeds along with everything else
-    entry.async_on_unload(
-        async_register_updater(hass, f"{entry.entry_id}_feeds", update_entry)
-    )
-
-    for stop in _async_start_feed_schedules(hass, sensors, query, config_entry=entry):
-        entry.async_on_unload(stop)

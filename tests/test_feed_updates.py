@@ -1,127 +1,130 @@
-"""Tests for the scheduled feed updates in sensor.py."""
+"""Tests for downloading the observation feeds and showing them."""
 
 # The tests check the integration's internals
 # pylint: disable=protected-access
 
-from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from custom_components.hungaromet_weather_and_forecast.national_radar import HungarometRadarImage
-from custom_components.hungaromet_weather_and_forecast.sensor import _async_update_feed
-from custom_components.hungaromet_weather_and_forecast.station_sensor import (
-    FEEDS,
-    Measurement,
-    StationQuery,
+from custom_components.hungaromet_weather_and_forecast.image import HungarometRadarImage
+from custom_components.hungaromet_weather_and_forecast.sensor import (
     StationSensor,
     StationsSensor,
 )
+from custom_components.hungaromet_weather_and_forecast.stations import (
+    Measurement,
+    StationQuery,
+)
 from custom_components.hungaromet_weather_and_forecast.weather_data import process_hourly_data
 
+from .entries import feed_coordinator, loaded_entry
+
 QUERY = StationQuery(distance_km=35, location=(47.5, 21.6))
+NEAR = {"StationName": "Near", "Distance_km": 1.0}
 
 
-def _value(hass, feed, key, value, unit="°C"):
-    return StationSensor(hass, FEEDS[feed], Measurement(key, key, unit), value, QUERY)
+def _coordinator(feed="hourly", query=QUERY, result=None, error=None):
+    """A feed's coordinator with an enabled entity, downloading as told."""
+    coordinator = feed_coordinator(feed, query)
+    _downloads(coordinator, result, error)
+    coordinator.async_add_listener(MagicMock())
+    return coordinator
 
 
-def _stations(hass, feed):
-    return StationsSensor(hass, FEEDS[feed], [], QUERY)
+def _downloads(coordinator, result=None, error=None):
+    coordinator.hass.async_add_executor_job = AsyncMock(return_value=result, side_effect=error)
 
 
-def _added(sensor):
-    sensor._added = True
-    sensor.async_write_ha_state = MagicMock()
-    return sensor
+def _value(coordinator, key, unit="°C"):
+    return StationSensor(coordinator, Measurement(key, key, unit))
 
 
-def _hass(result):
-    return SimpleNamespace(async_add_executor_job=AsyncMock(return_value=result))
+async def test_a_download_is_shown_by_all_its_feeds_sensors():
+    """Test one download gives every sensor of the feed its value."""
+    rows = [NEAR]
+    coordinator = _coordinator(result=({"average_t": 4.2, "average_r": 0.0}, rows))
+    temperature = _value(coordinator, "t")
+    rain = _value(coordinator, "r", "mm")
+    stations = StationsSensor(coordinator)
 
+    await coordinator.async_update_now()
 
-async def test_feed_update_downloads_once_and_updates_its_sensors():
-    """Test feed update downloads once and updates its sensors."""
-    rows = [{"StationName": "Near"}]
-    hass = _hass(({"average_t": 4.2, "average_r": 0.0}, rows))
-    temperature = _added(_value(hass, "hourly", "t", 1.0))
-    rain = _added(_value(hass, "hourly", "r", 5.0, "mm"))
-    stations = _added(_stations(hass, "hourly"))
-    daily = _added(_value(hass, "daily", "t", 9.0))
-    daily_stations = _added(_stations(hass, "daily"))
-
-    await _async_update_feed(
-        hass, [temperature, rain, stations, daily, daily_stations], "hourly", QUERY
+    coordinator.hass.async_add_executor_job.assert_awaited_once_with(
+        process_hourly_data, coordinator.hass, 35, (47.5, 21.6)
     )
-
-    hass.async_add_executor_job.assert_awaited_once_with(
-        process_hourly_data, hass, 35, (47.5, 21.6)
-    )
-    assert temperature.native_value == 4.2
+    assert temperature.available and temperature.native_value == 4.2
     assert rain.native_value == 0.0
-    assert stations.native_value == 1
+    assert stations.available and stations.native_value == 1
     assert stations.extra_state_attributes["raw_data"] == rows
-    stations.async_write_ha_state.assert_called_once()
-    assert daily.native_value == 9.0
-    assert daily_stations.native_value == 0
-    daily_stations.async_write_ha_state.assert_not_called()
 
 
 async def test_a_value_missing_from_a_download_makes_the_sensor_unavailable():
     """Test a value missing from a download makes the sensor unavailable."""
-    hass = _hass(({"average_t": None}, []))
-    sensor = _added(_value(hass, "ten_minutes", "t", 3.0))
+    coordinator = _coordinator(result=({"average_t": 3.0}, []))
+    sensor = _value(coordinator, "t")
+    await coordinator.async_update_now()
+    assert sensor.available
 
-    await _async_update_feed(hass, [sensor], "ten_minutes", QUERY)
+    _downloads(coordinator, ({"average_t": None}, []))
+    await coordinator.async_update_now()
 
     assert sensor.native_value is None
     assert not sensor.available
 
 
-async def test_feed_update_skips_download_without_added_sensors():
-    """Test feed update skips download without added sensors."""
-    hass = _hass(({}, []))
-    sensor = _value(hass, "daily", "t", 1.0)
+async def test_nothing_is_downloaded_without_enabled_sensors():
+    """Test a feed that no enabled sensor shows is not downloaded."""
+    coordinator = feed_coordinator("daily", QUERY)
+    _downloads(coordinator, ({}, []))
 
-    await _async_update_feed(hass, [sensor], "daily", QUERY)
+    await coordinator.async_update_now()
+    assert await coordinator._async_scheduled_download() is True
 
-    hass.async_add_executor_job.assert_not_awaited()
+    coordinator.hass.async_add_executor_job.assert_not_awaited()
 
 
-async def test_feed_update_makes_waiting_sensors_available():
-    """Test a download makes sensors waiting for their first one available."""
-    hass = _hass(({"average_t": 4.2}, [{"StationName": "Near"}]))
-    temperature = _added(_value(hass, "hourly", "t", None))
-    stations = _added(_stations(hass, "hourly"))
-    for sensor in (temperature, stations):
-        sensor.mark_download_failed()
-        assert not sensor.available
+async def test_using_a_station_out_of_range_is_warned_about_once(caplog):
+    """The nearest station is used when none is in the radius; said once."""
+    far = {"StationName": "Mid", "Distance_km": 22.24}
+    query = StationQuery(distance_km=5)
 
-    await _async_update_feed(hass, [temperature, stations], "hourly", QUERY)
+    for feed in ("daily", "daily", "hourly"):
+        coordinator = _coordinator(feed, query, ({"average_t": 4.2}, [far]))
+        # The entry's feeds share their records
+        await coordinator.async_update_now()
 
-    assert temperature.available and temperature.native_value == 4.2
-    assert stations.available and stations.native_value == 1
+    assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
+        (
+            "WARNING",
+            "No HungaroMet station with data within 5 km; "
+            "using nearest station Mid (22.2 km)",
+        )
+    ]
 
 
 async def test_failed_downloads_are_logged_once_and_so_is_the_recovery(caplog):
     """Test failed downloads make sensors unavailable and are logged once."""
-    hass = SimpleNamespace(async_add_executor_job=AsyncMock(side_effect=OSError("down")))
-    query = StationQuery()
-    sensor = _added(_value(hass, "daily", "t", 1.0))
+    coordinator = _coordinator("daily", StationQuery(), ({"t": 1.0}, [NEAR]))
+    sensor = _value(coordinator, "t")
+    stations = StationsSensor(coordinator)
+    await coordinator.async_update_now()
 
-    await _async_update_feed(hass, [sensor], "daily", query)
-    await _async_update_feed(hass, [sensor], "daily", query)
+    _downloads(coordinator, error=OSError("down"))
+    await coordinator.async_update_now()
+    await coordinator.async_update_now()
 
+    # Unavailable although the last download is still held
     assert not sensor.available
-    assert sensor.async_write_ha_state.call_count == 2
+    assert not stations.available
     assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
         ("WARNING", "HungaroMet daily weather download failed: down")
     ]
 
     caplog.clear()
-    hass.async_add_executor_job = AsyncMock(return_value=({"t": 2.0}, []))
-    await _async_update_feed(hass, [sensor], "daily", query)
-    await _async_update_feed(hass, [sensor], "daily", query)
+    _downloads(coordinator, ({"t": 2.0}, []))
+    await coordinator.async_update_now()
+    await coordinator.async_update_now()
 
     assert sensor.available and sensor.native_value == 2.0
     assert [(r.levelname, r.getMessage()) for r in caplog.records] == [
@@ -129,39 +132,34 @@ async def test_failed_downloads_are_logged_once_and_so_is_the_recovery(caplog):
     ]
 
 
-async def test_an_unexpected_error_is_logged_with_its_traceback(caplog):
-    """Test a bug in a download is logged with its traceback."""
-    hass = SimpleNamespace(async_add_executor_job=AsyncMock(side_effect=KeyError("bug")))
-    sensor = _added(_value(hass, "daily", "t", 1.0))
+@pytest.mark.parametrize(
+    ("error", "message", "traceback"),
+    [
+        (TimeoutError(), "TimeoutError", False),
+        (ValueError("broken file"), "broken file", False),
+        # A bug in a download
+        (KeyError("bug"), "KeyError('bug')", True),
+    ],
+)
+async def test_how_a_failed_download_is_logged(caplog, error, message, traceback):
+    """Test only an unexpected error is logged with its traceback."""
+    coordinator = _coordinator("ten_minutes", StationQuery(), error=error)
 
-    await _async_update_feed(hass, [sensor], "daily", StationQuery())
+    await coordinator.async_update_now()
 
     [record] = caplog.records
-    assert record.getMessage() == (
-        "HungaroMet daily weather download failed: KeyError('bug')"
-    )
-    assert record.exc_info
-
-
-async def test_a_failed_entity_update_makes_the_sensor_unavailable():
-    """Test a failed update_entity makes the sensor unavailable."""
-    hass = SimpleNamespace(async_add_executor_job=AsyncMock(side_effect=OSError("down")))
-    sensor = _added(_value(hass, "daily", "t", 1.0))
-
-    await sensor.async_update()
-
-    assert not sensor.available
-    sensor.async_write_ha_state.assert_called_once()
+    assert record.getMessage() == f"HungaroMet 10-minute weather download failed: {message}"
+    assert bool(record.exc_info) is traceback
 
 
 @pytest.mark.parametrize(
     "entity",
     [
-        _value(SimpleNamespace(), "daily", "t", 0),
-        _value(SimpleNamespace(), "hourly", "t", 0),
-        _value(SimpleNamespace(), "ten_minutes", "t", 0),
-        _stations(SimpleNamespace(), "daily"),
-        HungarometRadarImage(SimpleNamespace(data={}, bus=MagicMock())),
+        _value(feed_coordinator("daily"), "t"),
+        _value(feed_coordinator("hourly"), "t"),
+        _value(feed_coordinator("ten_minutes"), "t"),
+        StationsSensor(feed_coordinator("daily")),
+        HungarometRadarImage(MagicMock(data={}), loaded_entry()),
     ],
 )
 def test_entities_are_not_polled(entity):

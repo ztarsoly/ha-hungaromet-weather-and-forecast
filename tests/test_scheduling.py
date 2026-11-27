@@ -7,25 +7,21 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
-import pandas as pd
 import pytest
 
 from custom_components.hungaromet_weather_and_forecast import scheduler
-from custom_components.hungaromet_weather_and_forecast.national_radar import HungarometRadarImage
-from custom_components.hungaromet_weather_and_forecast.radar import _frame_is_fresh, frame_time
-from custom_components.hungaromet_weather_and_forecast.scheduler import RetryingSchedule
-from custom_components.hungaromet_weather_and_forecast.sensor import (
+from custom_components.hungaromet_weather_and_forecast.image import HungarometRadarImage
+from custom_components.hungaromet_weather_and_forecast.radar import frame_is_fresh, frame_time
+from custom_components.hungaromet_weather_and_forecast.coordinator import (
     FEED_SCHEDULES,
-    _async_start_feed_schedules,
     _is_fresh,
 )
-from custom_components.hungaromet_weather_and_forecast.station_sensor import (
-    FEEDS,
-    Measurement,
-    StationQuery,
-    StationSensor,
-)
+from custom_components.hungaromet_weather_and_forecast.scheduler import RetryingSchedule
 from custom_components.hungaromet_weather_and_forecast.weather_data import latest_observations
+
+from .rows import column, table
+
+from .entries import feed_coordinator, loaded_entry
 
 RUN = datetime(2026, 10, 27, 8, 20, 59, tzinfo=UTC)
 
@@ -131,9 +127,27 @@ async def test_disabled_polling_skips_scheduled_runs(monkeypatch):
     assert job.await_count == 1
     assert clock.cancelled == ["retry0"]
 
-    # Running now (startup, update service) still works
+    # Running now (at startup) still works, and its failure is not retried
     await schedule.async_run_now()
     assert job.await_count == 2
+    assert len(clock.later) == 1
+
+
+async def test_a_retry_stops_once_polling_is_disabled(monkeypatch):
+    """Test a retry that runs after polling was turned off is the last one."""
+    clock = FakeClock(monkeypatch)
+    entry = SimpleNamespace(pref_disable_polling=False)
+    job = AsyncMock(return_value=False)
+    schedule = RetryingSchedule(
+        None, "test", job, timedelta(minutes=1), config_entry=entry, minute=5
+    )
+    await schedule.async_run_now()
+
+    entry.pref_disable_polling = True
+    await clock.later[0][1](None)
+
+    assert job.await_count == 2
+    assert len(clock.later) == 1
 
 
 def test_feed_schedules_follow_hungaromet_publishing():
@@ -161,34 +175,42 @@ def test_is_fresh(data_type, observed, scheduled_for, fresh):
     assert _is_fresh(data_type, observed, scheduled_for) is fresh
 
 
-async def test_feed_schedule_jobs_report_freshness(monkeypatch):
-    """Test feed schedule jobs report freshness."""
+async def test_a_feed_is_retried_until_the_due_data_is_there(monkeypatch):
+    """Test a feed's schedule retries a failed or old download."""
     clock = FakeClock(monkeypatch)
-    hass = SimpleNamespace(
-        async_add_executor_job=AsyncMock(return_value=({"time": "2026-10-25"}, []))
-    )
-    daily = StationSensor(
-        hass, FEEDS["daily"], Measurement("D", "t", "°C"), 1.0, StationQuery()
-    )
-    daily.async_write_ha_state = MagicMock()
+    coordinator = feed_coordinator("daily")
+    download = AsyncMock(return_value=({"time": "2026-10-25"}, []))
+    coordinator.hass.async_add_executor_job = download
+    coordinator.schedule.start()
+    assert len(clock.tracked) == 1
+    run, pattern = clock.tracked[-1]
+    assert pattern == {"hour": 9, "minute": 35, "second": 59}
+    due = datetime(2026, 10, 27, 9, 35, 59, tzinfo=UTC)
 
-    stops = _async_start_feed_schedules(hass, [daily], StationQuery())
-    assert len(stops) == 3
-    daily_run, hourly_run = clock.tracked[0][0], clock.tracked[1][0]
-
-    # Nothing added yet: no download and no retry
-    await daily_run(datetime(2026, 10, 27, 9, 35, 59, tzinfo=UTC))
-    hass.async_add_executor_job.assert_not_awaited()
+    # No enabled sensor: no download and no retry
+    await run(due)
+    download.assert_not_awaited()
     assert not clock.later
 
-    # Stale daily data schedules a retry an hour later
-    daily._added = True
-    await daily_run(datetime(2026, 10, 27, 9, 35, 59, tzinfo=UTC))
-    assert clock.later[0][0] == timedelta(hours=1)
+    # Old data is tried again an hour later
+    coordinator.async_add_listener(MagicMock())
+    await run(due)
+    assert clock.later[-1][0] == timedelta(hours=1)
 
-    # Hourly has no added sensors, so it neither downloads nor retries
-    await hourly_run(RUN)
-    assert len(clock.later) == 1
+    # So are a failure and data without a time
+    for result in (OSError("down"), ({}, [])):
+        download.side_effect = [result]
+        await clock.later[-1][1](None)
+    assert len(clock.later) == 3
+
+    # The due data ends the retries
+    download.side_effect = [({"time": "2026-10-26"}, [])]
+    await clock.later[-1][1](None)
+    assert len(clock.later) == 3
+
+    # Outside a schedule any download will do
+    download.side_effect = [({"time": "2026-10-25"}, [])]
+    assert await coordinator._async_scheduled_download() is True
 
 
 def test_frame_time_and_freshness():
@@ -197,10 +219,10 @@ def test_frame_time_and_freshness():
     assert frame_time(url) == datetime(2026, 10, 27, 8, 0, tzinfo=UTC)
     assert frame_time("https://x/other.png") is None
     assert frame_time(None) is None
-    assert _frame_is_fresh(url, datetime(2026, 10, 27, 8, 5, 59, tzinfo=UTC))
-    assert _frame_is_fresh(url, datetime(2026, 10, 27, 8, 9, 59, tzinfo=UTC))
-    assert not _frame_is_fresh(url, datetime(2026, 10, 27, 8, 10, 59, tzinfo=UTC))
-    assert not _frame_is_fresh(None, datetime(2026, 10, 27, 8, 5, 59, tzinfo=UTC))
+    assert frame_is_fresh(url, datetime(2026, 10, 27, 8, 5, 59, tzinfo=UTC))
+    assert frame_is_fresh(url, datetime(2026, 10, 27, 8, 9, 59, tzinfo=UTC))
+    assert not frame_is_fresh(url, datetime(2026, 10, 27, 8, 10, 59, tzinfo=UTC))
+    assert not frame_is_fresh(None, datetime(2026, 10, 27, 8, 5, 59, tzinfo=UTC))
 
 
 async def test_radar_failed_rebuild_is_unavailable():
@@ -208,7 +230,7 @@ async def test_radar_failed_rebuild_is_unavailable():
     hass = SimpleNamespace(
         async_add_executor_job=AsyncMock(return_value=(None, None)), data={}, bus=MagicMock()
     )
-    image = HungarometRadarImage(hass)
+    image = HungarometRadarImage(hass, loaded_entry())
     image._added = True
     image.async_write_ha_state = MagicMock()
 
@@ -221,7 +243,7 @@ async def test_radar_failed_rebuild_is_unavailable():
 
 def test_latest_observations_drops_late_corrections():
     """Test latest observations drops late corrections."""
-    df = pd.DataFrame({
+    df = table({
         "Time": [202610270750, 202610270800, 202610270800],
         "StationName": ["Kismacs", "Kismacs", "Repulover"],
         "t": [8.2, 9.1, 9.7],
@@ -229,4 +251,4 @@ def test_latest_observations_drops_late_corrections():
 
     result = latest_observations(df)
 
-    assert list(result["t"]) == [9.1, 9.7]
+    assert column(result, "t") == [9.1, 9.7]

@@ -10,8 +10,17 @@ CONF_FORECAST = "forecast"
 CONF_LOCATION = "location"
 LOCATION_HOME = "home"
 LOCATION_SETTLEMENT = "settlement"
+# The parts of a location entry that can be left out: the weather station feeds,
+# by their keys, and the regional radar image
+CONF_DEVICES = "devices"
+DEVICE_REGIONAL_RADAR = "regional_radar"
+DEVICES = ("daily", "hourly", "ten_minutes", DEVICE_REGIONAL_RADAR)
+REGIONAL_DEVICE_ID = "hungaromet_regional_radar"
+FORECAST_DEVICE_ID = "hungaromet_forecast"
+# The setup form's checkbox that adds the national radar entry
+CONF_NATIONAL_RADAR = "national_radar"
 # Entries are locations (weather, forecast, regional radar) unless marked as the
-# single, automatically created national radar entry
+# single national radar entry, which the setup form adds
 CONF_ENTRY_TYPE = "entry_type"
 ENTRY_TYPE_RADAR = "radar"
 RADAR_ENTRY_UNIQUE_ID = "national_radar"

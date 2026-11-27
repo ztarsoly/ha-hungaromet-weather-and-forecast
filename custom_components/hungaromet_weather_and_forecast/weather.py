@@ -5,7 +5,6 @@ from homeassistant.components.weather import (
     SingleCoordinatorWeatherEntity,
     WeatherEntityFeature,
 )
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     UnitOfPrecipitationDepth,
     UnitOfPressure,
@@ -15,17 +14,19 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
-from .const import DOMAIN
-from .forecast import ForecastCoordinator, forecast_device_info, forecast_scope
+from .coordinator import ForecastCoordinator
+from .data import HungaroMetConfigEntry
+from .entity import HungaroMetForecastEntity
 from .forecast_scraper import ForecastPeriod, ForecastValues
-from .scope import scoped_id
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant,
+    entry: HungaroMetConfigEntry,
+    async_add_entities: AddEntitiesCallback,
 ):
     """Add the forecast weather entity when a settlement is configured."""
-    coordinator = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+    coordinator = entry.runtime_data.forecast
     if coordinator is not None:
         async_add_entities([HungarometForecastWeather(coordinator)])
 
@@ -54,11 +55,10 @@ def _forecast(p: ForecastValues, daily: bool) -> Forecast:
 # Home Assistant's weather base classes are deep, and the twice-daily forecast is
 # optional: it is only requested when the feature flag says it is supported
 class HungarometForecastWeather(  # pylint: disable=too-many-ancestors,abstract-method
-    SingleCoordinatorWeatherEntity[ForecastCoordinator]
+    HungaroMetForecastEntity, SingleCoordinatorWeatherEntity[ForecastCoordinator]
 ):
     """Current conditions and the daily and 6-hourly forecast from met.hu."""
 
-    _attr_has_entity_name = True
     _attr_name = None  # Named after the device
     _attr_attribution = "Weather forecast by HungaroMet"
     _attr_native_temperature_unit = UnitOfTemperature.CELSIUS
@@ -71,9 +71,7 @@ class HungarometForecastWeather(  # pylint: disable=too-many-ancestors,abstract-
 
     def __init__(self, coordinator: ForecastCoordinator) -> None:
         super().__init__(coordinator)
-        scope = forecast_scope(coordinator)
-        self._attr_unique_id = scoped_id(scope, "hungaromet_forecast_weather")
-        self._attr_device_info = forecast_device_info(scope)
+        self._join_forecast_device(coordinator, "weather")
 
     @property
     def available(self) -> bool:

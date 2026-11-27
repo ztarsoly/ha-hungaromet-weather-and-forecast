@@ -6,21 +6,22 @@
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+from custom_components.hungaromet_weather_and_forecast.data import HungaroMetData
 from custom_components.hungaromet_weather_and_forecast.image import (
     async_setup_entry,
     _setup_image_entities,
-)
-from custom_components.hungaromet_weather_and_forecast.national_radar import (
     HungarometRadarImage,
-)
-from custom_components.hungaromet_weather_and_forecast.regional_radar import (
     HungarometRegionalRadarImage,
 )
 
 
 def _entry(entry_id, data=None):
     return SimpleNamespace(
-        entry_id=entry_id, title="HungaroMet", data=data or {}, options={}
+        entry_id=entry_id,
+        title="HungaroMet",
+        data=data or {},
+        options={},
+        runtime_data=HungaroMetData(name="HungaroMet"),
     )
 
 
@@ -79,12 +80,12 @@ def test_setup_image_entities():
     hass = MagicMock()
     async_add_entities = MagicMock()
 
-    _setup_image_entities(hass, async_add_entities)
+    _setup_image_entities(hass, _entry("radar", {"entry_type": "radar"}), async_add_entities)
 
     async_add_entities.assert_called_once()
     args = async_add_entities.call_args[0]
     entities = args[0]
     assert len(entities) == 1
-    assert entities[0].name == "National radar image"
+    assert entities[0].name is None  # its device's name
     # The unique ID stays the same as before the rename
     assert entities[0].unique_id == "hungaromet_radar_gif_hungaromet_radar"
