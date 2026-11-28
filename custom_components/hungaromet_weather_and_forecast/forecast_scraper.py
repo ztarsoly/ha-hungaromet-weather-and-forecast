@@ -41,6 +41,7 @@ from homeassistant.util import dt as dt_util
 
 from .failures import FailureRecords
 from .html_tree import Element, parse_html
+from .rounding import round_half_away
 
 _LOGGER = logging.getLogger(__package__)
 
@@ -627,16 +628,11 @@ def _towards(
     return replace(hour, **values)
 
 
-def _whole(value: float) -> float:
-    """Round to a whole number, as met.hu's rows have, with halves going up."""
-    return float(math.floor(value + 0.5))
-
-
 def _lerp(start: float | None, end: float | None, fraction: float):
     """Interpolate linearly; without both ends, keep the start value."""
     if start is None or end is None:
         return start
-    return _whole(start + (end - start) * fraction)
+    return round_half_away(start + (end - start) * fraction)
 
 
 def _lerp_bearing(start: float | None, end: float | None, fraction: float):
@@ -644,7 +640,8 @@ def _lerp_bearing(start: float | None, end: float | None, fraction: float):
     if start is None or end is None:
         return start
     turn = (end - start + 180) % 360 - 180
-    return _whole(start + turn * fraction) % 360
+    # Rounded as a compass bearing, 0-360, which 359.5 leaves as 0
+    return round_half_away((start + turn * fraction) % 360) % 360
 
 
 def bearing_to_direction(bearing: float) -> str:
@@ -662,7 +659,7 @@ def mean_bearing(bearings: list[float]) -> float | None:
     north = sum(math.cos(r) for r in radians)
     if math.hypot(east, north) < 1e-9:
         return None
-    return _whole(math.degrees(math.atan2(east, north))) % 360
+    return round_half_away(math.degrees(math.atan2(east, north)) % 360) % 360
 
 
 def beaufort_force(speed: float) -> str:
@@ -688,7 +685,7 @@ def _hour(start: ForecastPeriod, end: ForecastPeriod, step: int, steps: int):
         temperature=_lerp(start.temperature, end.temperature, fraction),
         weather_condition=start.weather_condition,
         precipitation=(
-            round(start.precipitation / steps, 2)
+            round_half_away(start.precipitation / steps, 2)
             if start.precipitation is not None
             else None
         ),
@@ -775,7 +772,7 @@ def _values(rows: list[ForecastPeriod], name: str) -> list[float]:
 def _average(rows: list[ForecastPeriod], name: str) -> float | None:
     """Return the rows' average of a value, as a whole number like the rows'."""
     values = _values(rows, name)
-    return _whole(sum(values) / len(values)) if values else None
+    return round_half_away(sum(values) / len(values)) if values else None
 
 
 def _day_summary(rows: list[ForecastPeriod]) -> ForecastValues:
@@ -794,12 +791,16 @@ def _day_summary(rows: list[ForecastPeriod]) -> ForecastValues:
         # The start of the day, in Hungarian time
         forecast_time=rows[0].forecast_time.replace(hour=0, minute=0, second=0, microsecond=0),
         temperature=(
-            round(sum(temperatures) / len(temperatures), 2) if temperatures else None
+            round_half_away(sum(temperatures) / len(temperatures), 2)
+            if temperatures
+            else None
         ),
         temperature_min=min(lows, default=None),
         temperature_max=max(highs, default=None),
         weather_condition="sunny" if middle == "clear-night" else middle,
-        precipitation=round(sum(precipitation), 2) if precipitation else None,
+        precipitation=(
+            round_half_away(sum(precipitation), 2) if precipitation else None
+        ),
         cloud_cover=_average(rows, "cloud_cover"),
         wind_speed=_average(rows, "wind_speed"),
         wind_gust=max(_values(rows, "wind_gust"), default=None),

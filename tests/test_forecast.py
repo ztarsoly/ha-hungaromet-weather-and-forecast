@@ -262,11 +262,11 @@ def test_daily_cloud_cover_is_the_average():
     assert aggregate_daily(rows)[0].cloud_cover == 50
     # A row without cloud cover does not count
     rows = _day_rows({"cloud_cover": 90}, {}, {"cloud_cover": 15})
-    assert aggregate_daily(rows)[0].cloud_cover == 53  # 52.5, halves go up
+    assert aggregate_daily(rows)[0].cloud_cover == 53  # 52.5, away from zero
 
 
 def test_daily_averages_are_whole_numbers_like_the_rows():
-    """Cloud cover, wind and pressure averages are rounded, halves upwards."""
+    """Cloud cover, wind and pressure averages are rounded, halves away from 0."""
     rows = _day_rows(
         {"cloud_cover": 80, "wind_speed": 10, "pressure": 1020, "wind_bearing": 10},
         {"cloud_cover": 72, "wind_speed": 13, "pressure": 1021, "wind_bearing": 13},

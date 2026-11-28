@@ -127,6 +127,18 @@ def test_value_sensor_values():
 
 
 @pytest.mark.parametrize(
+    ("value", "expected"),
+    [(-2.345, -2.35), (2.345, 2.35), (-0.001, 0.0), (7, 7)],
+)
+def test_station_values_round_halves_away_from_zero(value, expected):
+    """Two decimals, and a whole number stays one."""
+    sensor = _sensor()
+    _download(sensor, value)
+    assert sensor.native_value == expected
+    assert type(sensor.native_value) is type(expected)
+
+
+@pytest.mark.parametrize(
     ("feed", "value", "expected"),
     [
         ("daily", "2024-01-01", date(2024, 1, 1)),

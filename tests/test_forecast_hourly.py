@@ -48,7 +48,7 @@ def test_temperature_example():
 
 
 def test_calculated_values_are_whole_numbers_like_the_rows():
-    """Halves go up, below zero too."""
+    """Halves go away from zero, so down below zero."""
     hourly = interpolate_hourly(
         [
             _at(28, 13, temperature=16, pressure=1020, wind_speed=-1),
@@ -60,7 +60,7 @@ def test_calculated_values_are_whole_numbers_like_the_rows():
     assert [p.temperature for p in hourly[1:6]] == [16, 15, 15, 14, 14]
     assert [p.pressure for p in hourly[1:6]] == [1020, 1021, 1021, 1021, 1022]
     # -1.5, -2, -2.5, -3, -3.5
-    assert [p.wind_speed for p in hourly[1:6]] == [-1, -2, -2, -3, -3]
+    assert [p.wind_speed for p in hourly[1:6]] == [-2, -2, -3, -3, -4]
 
 
 def test_a_bearing_rounded_up_to_north_is_0():
@@ -507,7 +507,7 @@ def test_hours_continue_from_the_recorded_values():
     assert (data.current.temperature, data.current.pressure) == (1, 1018)
     temperatures = {p.forecast_time.hour: p.temperature for p in data.hourly}
     assert temperatures[1] == 1.0  # recorded
-    assert temperatures[4] == 1  # 0.5, halves go up
+    assert temperatures[4] == 1  # 0.5, away from zero
     assert temperatures[7] == 0.0  # the row itself
 
 

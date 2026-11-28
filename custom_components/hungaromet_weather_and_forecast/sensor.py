@@ -39,6 +39,7 @@ from .forecast_scraper import (
     ForecastData,
     ForecastValues,
 )
+from .rounding import round_half_away
 from .scope import device_info, scoped_id
 from .stations import MEASUREMENTS, Measurement, reading
 from .warning_scraper import LEVEL_STATES, highest_level, in_force
@@ -292,8 +293,8 @@ class StationSensor(FeedSensor):
         value = reading(data[0], self._measurement.key) if data else None
         if self._base_key == "time" and value:
             return self._time(value)
-        if isinstance(value, (int, float)):
-            return round(value, 2)
+        if isinstance(value, float):
+            return round_half_away(value, 2)
         return value
 
     def _time(self, value: str) -> date | datetime | None:
