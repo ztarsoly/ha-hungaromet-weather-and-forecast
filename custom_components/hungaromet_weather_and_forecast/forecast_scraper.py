@@ -62,7 +62,8 @@ MONTHS = (
     "július", "augusztus", "szeptember", "október", "november", "december",
 )
 
-# A 16-point compass, like Home Assistant's weather cards ("n" is 348.75-11.25°)
+# A 16-point compass, like Home Assistant's weather cards ("n" is from 348.75°
+# up to 11.25°)
 SIXTEEN_POINTS = (
     "n", "nne", "ne", "ene", "e", "ese", "se", "sse",
     "s", "ssw", "sw", "wsw", "w", "wnw", "nw", "nnw",
@@ -331,7 +332,7 @@ def _row(
         setattr(period, name, _number(_text(td)))
     period.precipitation = _first_number(cells, "R")
     cloud = _first_number(cells, "C")
-    period.cloud_cover = None if cloud is None else round(cloud, 2)
+    period.cloud_cover = None if cloud is None else round_half_away(cloud, 2)
     speeds = [_number(_text(td)) for td in cells.get("Wf", [])]
     period.wind_speed, period.wind_gust = (speeds + [None, None])[:2]
     period.pressure = _first_number(cells, "P")
@@ -646,7 +647,7 @@ def _lerp_bearing(start: float | None, end: float | None, fraction: float):
 
 def bearing_to_direction(bearing: float) -> str:
     """Return the 16-point compass key for a bearing in degrees."""
-    return SIXTEEN_POINTS[round(bearing / 22.5) % 16]
+    return SIXTEEN_POINTS[int(round_half_away(bearing / 22.5)) % 16]
 
 
 def mean_bearing(bearings: list[float]) -> float | None:

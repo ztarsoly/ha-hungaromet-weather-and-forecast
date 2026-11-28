@@ -166,6 +166,13 @@ def test_parse_page_conditions_and_wind(caplog):
     assert "Unknown met.hu wind direction 'furcsa'" in caplog.text
 
 
+def test_a_cloud_cover_half_goes_away_from_zero():
+    """12.345 is kept as 12.35."""
+    page = PAGE.replace("<P>40</P>", "<P>12,345</P>")
+
+    assert parse_page(page, "Debrecen", NOW).periods[0].cloud_cover == 12.35
+
+
 @pytest.mark.parametrize(
     ("description", "night", "condition"),
     [

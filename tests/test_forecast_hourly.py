@@ -120,6 +120,10 @@ def test_wind_bearing_turns_the_short_way_round():
     [
         (0, "n"),
         (11.2, "n"),
+        # Halfway between two points goes to the one further from north's 0
+        (11.25, "nne"),
+        (56.25, "ene"),
+        (348.75, "n"),
         (12, "nne"),
         (34, "ne"),
         (90, "e"),
