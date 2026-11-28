@@ -11,6 +11,7 @@ import pytest
 
 from custom_components.hungaromet_weather_and_forecast.failures import FailureLog
 from custom_components.hungaromet_weather_and_forecast import coordinator as coordinators
+from custom_components.hungaromet_weather_and_forecast import sensor as s
 from custom_components.hungaromet_weather_and_forecast import weather as w
 from custom_components.hungaromet_weather_and_forecast.forecast_scraper import (
     HUNGARY_TZ,
@@ -167,6 +168,47 @@ def test_find_current_hour():
     now = datetime(2026, 10, 28, 15, 40, tzinfo=HUNGARY_TZ)
     assert find_current_hour(hourly, now).temperature == 14.0
     assert find_current_hour(hourly, datetime(2026, 10, 29, 9, tzinfo=HUNGARY_TZ)) is None
+    assert find_current_hour([], now) is None
+
+
+@pytest.mark.parametrize(
+    ("day", "hour", "shown"),
+    [
+        # met.hu dropped the 13:00 row at 17:00: the 19:00 row is shown early
+        (28, 17, True),
+        (28, 18, True),
+        # Up to a period ahead
+        (28, 13, True),
+        (28, 12, False),
+    ],
+)
+def test_the_next_row_is_shown_before_it_starts(day, hour, shown):
+    """Without the current hour, the first row stands in if it starts soon."""
+    hourly = interpolate_hourly(
+        [_at(28, 19, temperature=10), _at(29, 1, temperature=8)]
+    )
+
+    current = find_current_hour(
+        hourly, datetime(2026, 10, day, hour, 38, tzinfo=HUNGARY_TZ)
+    )
+
+    assert current is (hourly[0] if shown else None)
+
+
+def test_the_next_row_of_tomorrow_brings_tomorrows_summary():
+    """Late in the evening the next row, and so the day, is tomorrow's."""
+    now = datetime(2026, 10, 28, 23, 30, tzinfo=HUNGARY_TZ)
+
+    data = _download(_at(29, 1, temperature=8, temperature_min=3), now=now)
+
+    assert data.current.forecast_time == data.periods[0].forecast_time
+    coordinator = MagicMock(data=data)
+    sensor = object.__new__(s.ForecastSensor)
+    sensor.coordinator = coordinator
+    sensor.entity_description = next(
+        d for d in s.FORECAST_SENSORS if d.key == "temperature_min"
+    )
+    assert sensor.native_value == 3
 
 
 def _data():
@@ -212,7 +254,8 @@ def test_dropped_row_is_kept_from_the_previous_download():
         now=datetime(2026, 10, 28, 16, 58, tzinfo=HUNGARY_TZ),
     )
     new = _download(_at(28, 19, temperature=10), _at(29, 1, temperature=8), now=now)
-    assert new.current is None  # without the dropped row: no 17:00 hour
+    # Without the dropped row there is no 17:00 hour: the 19:00 row is shown early
+    assert new.current.forecast_time.hour == 19
 
     data = keep_dropped_row(new, previous, now)
 

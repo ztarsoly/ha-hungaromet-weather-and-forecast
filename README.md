@@ -133,8 +133,8 @@ Mindhárom szolgáltatásnak van egy **Állomások** érzékelője is. Az érté
 Az előrejelzés szolgáltatás ezeket adja:
 
 - A szolgáltatásról elnevezett **időjárás-entitást** napi (7 napos) és órás előrejelzéssel az időjárás-kártyákhoz
-- **Érzékelőket** az aktuális órára: hőmérséklet, csapadék, felhőzet, szélsebesség, széllökés, szélirány (fok és égtáj), szélerősség (Beaufort-skála, a szélsebességből számítva), légnyomás és időjárási helyzet
-- A **mai minimum- és maximumhőmérsékletet**, valamint az előrejelzés **kiadásának idejét**
+- **Érzékelőket** az aktuális órára: hőmérséklet, csapadék, felhőzet, szélsebesség, széllökés, szélirány (fok és égtáj), szélerősség (Beaufort-skála, a szélsebességből számítva), légnyomás és állapot (időjárási helyzet)
+- A **napi minimum- és maximumhőmérsékletet**, valamint az előrejelzés **kiadásának idejét**
 - A **Riasztás 3 órán belül** és a **Figyelmeztetés mára** érzékelőt a HungaroMet veszélyjelzéséből
 
 A **Riasztás 3 órán belül** érzékelő a település járására érvényben lévő riasztást, a **Figyelmeztetés mára** érzékelő a település megyéjére a mai napra kiadott figyelmeztetést mutatja. Az értékük a legmagasabb érvényben lévő fokozat: *Nincs*, *Sárga*, *Narancs* vagy *Piros* (pl. *Sárga riasztás*). Az `alerts`, illetve a `warnings` attribútumuk az érvényben lévő jelenségek listája, a legmagasabb fokozattal kezdve; ha nincs érvényben semmi, a lista üres. Minden elemnek három adata van: `label` (a jelenség neve a Home Assistant nyelvén: magyarul, ha az magyar, egyébként angolul), `type` (a jelenség nyelvtől független kulcsa) és `level` (`yellow`, `orange` vagy `red`). Például:
@@ -166,7 +166,9 @@ A járást a település koordinátái alapján az integráció a met.hu veszél
 
 A met.hu 6 óránként (01, 07, 13 és 19 órakor) ad egy előrejelzési sort, amely az időpontjától kezdődő 6 órát írja le. A köztes órák számítottak: a hőmérséklet, a felhőzet, a szélsebesség, a széllökés, a légnyomás és a szélirány az egyik sortól a következőig egyenletesen változik (2 tizedesre kerekítve), az időjárási helyzet és a csapadék viszont a sor teljes időszakára vonatkozik, a csapadék egyenlően elosztva az órák között. Ezek számított értékek, nem külön előrejelzések.
 
-A met.hu a sorokat 4 órával az időpontjuk után leveszi az oldalról. Az integráció a mai nap korábbi sorait megtartja, hogy a mai minimum és maximum egész nap helyes maradjon.
+A met.hu a sorokat 4 órával az időpontjuk után leveszi az oldalról. Az integráció a mai nap korábbi sorait megtartja, hogy a napi minimum és maximum egész nap helyes maradjon.
+
+Ha nincs mentett példány (egy új bejegyzésnél vagy az előrejelzés településének módosítása után), a levett sorok hiányoznak. Ha ezért az aktuális órát egyik sor sem tartalmazza, az integráció a következő, legfeljebb 6 órán belül kezdődő sor értékeit mutatja előre, rendszerint legfeljebb 2 órán át. A napi minimum és maximum ilyenkor annak a napnak a megmaradt soraiból számított, amelyre ez a sor esik: 23:00 és éjfél között ez már a következő nap.
 
 ### Radarképek
 
@@ -200,7 +202,7 @@ Az érzékelők, az időjárás-entitás és a radarképek *ismeretlen* érték 
 
 - ha a legutóbbi letöltésük nem sikerült, a következő sikeres letöltésig (az előrejelzés kivételével, lásd lent);
 - ha a sikeres letöltésben nincs értékük, például az állomások nem mérik az adott mennyiséget, vagy a met.hu időjárás-leírása ismeretlen (ilyenkor az adott órának nincs időjárási helyzete);
-- ha az előrejelzés nem tartalmazza az aktuális órát. Ez az első telepítés után fordulhat elő, legfeljebb a következő előrejelzési sor időpontjáig. Ilyenkor az időjárás-entitás előrejelzése sem érhető el.
+- ha az előrejelzés nem tartalmazza az aktuális órát, és 6 órán belül kezdődő sora sincs (lásd az [Előrejelzés](#előrejelzés) részt). Ilyenkor az időjárás-entitás előrejelzése sem érhető el.
 
 **Kivétel az előrejelzés:** ha a letöltése nem sikerül, az előrejelzés-érzékelők és az időjárás-entitás az utolsó letöltött (újraindítás után a mentett) előrejelzést követik óráról órára. Csak akkor nem elérhetők, ha abban már nincs benne az aktuális óra. A riasztás és a figyelmeztetés ilyenkor is nem elérhető.
 

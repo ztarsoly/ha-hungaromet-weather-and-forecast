@@ -169,7 +169,7 @@
         "name": "Gamma dose rate"
       },
       "daily_suv": {
-        "name": "UV radiation"
+        "name": "Total UV radiation"
       },
       "daily_fs": {
         "name": "Synoptic wind speed"
@@ -253,7 +253,7 @@
         "name": "Total global radiation"
       },
       "hourly_suv": {
-        "name": "UV radiation"
+        "name": "Total UV radiation"
       },
       "hourly_fx": {
         "name": "Maximum wind gust speed"
@@ -370,10 +370,10 @@
         "name": "Temperature"
       },
       "forecast_temperature_min": {
-        "name": "Today's minimum temperature"
+        "name": "Daily minimum temperature"
       },
       "forecast_temperature_max": {
-        "name": "Today's maximum temperature"
+        "name": "Daily maximum temperature"
       },
       "forecast_precipitation": {
         "name": "Precipitation"

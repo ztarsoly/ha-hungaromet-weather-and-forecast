@@ -142,10 +142,10 @@
         "name": "Átlaghőmérséklet"
       },
       "daily_tn": {
-        "name": "Minimumhőmérséklet"
+        "name": "Minimum hőmérséklet"
       },
       "daily_tx": {
-        "name": "Maximumhőmérséklet"
+        "name": "Maximum hőmérséklet"
       },
       "daily_sr": {
         "name": "Globálsugárzás összesen"
@@ -238,10 +238,10 @@
         "name": "Átlaghőmérséklet"
       },
       "hourly_tn": {
-        "name": "Minimumhőmérséklet"
+        "name": "Minimum hőmérséklet"
       },
       "hourly_tx": {
-        "name": "Maximumhőmérséklet"
+        "name": "Maximum hőmérséklet"
       },
       "hourly_u": {
         "name": "Relatív páratartalom"
@@ -322,10 +322,10 @@
         "name": "Átlaghőmérséklet"
       },
       "ten_minutes_tn": {
-        "name": "Minimumhőmérséklet"
+        "name": "Minimum hőmérséklet"
       },
       "ten_minutes_tx": {
-        "name": "Maximumhőmérséklet"
+        "name": "Maximum hőmérséklet"
       },
       "ten_minutes_u": {
         "name": "Relatív páratartalom"
@@ -370,10 +370,10 @@
         "name": "Hőmérséklet"
       },
       "forecast_temperature_min": {
-        "name": "Mai minimum hőmérséklet"
+        "name": "Napi minimumhőmérséklet"
       },
       "forecast_temperature_max": {
-        "name": "Mai maximum hőmérséklet"
+        "name": "Napi maximumhőmérséklet"
       },
       "forecast_precipitation": {
         "name": "Csapadék"
@@ -433,7 +433,7 @@
         "name": "Légnyomás"
       },
       "forecast_weather_condition": {
-        "name": "Időjárás",
+        "name": "Állapot",
         "state": {
           "sunny": "Napos",
           "clear-night": "Derült éjszaka",

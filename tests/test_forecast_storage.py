@@ -219,11 +219,12 @@ async def test_the_saved_forecast_fills_the_first_download():
     assert go_on.call_args.args[1] is None
 
 
-async def test_without_the_current_hour_there_is_no_current_forecast():
-    """Test no other row stands in for a current hour that is missing."""
+async def test_without_anything_saved_the_next_row_is_shown():
+    """A first download at 17:22 starts at 19:00, and shows that row early."""
     data, _ = await _download(_coordinator(None))
 
-    assert data.current is None
+    assert (data.current.forecast_time.hour, data.current.temperature) == (19, 10)
+    assert [p.forecast_time.hour for p in data.periods] == [19, 1]
 
 
 @pytest.mark.parametrize("success", [True, False])

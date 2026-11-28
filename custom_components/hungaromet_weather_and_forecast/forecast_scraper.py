@@ -163,7 +163,8 @@ class ForecastData:
     settlement: str = ""
     location: tuple[float, float] | None = None  # latitude, longitude
     issued: datetime | None = None
-    current: ForecastPeriod | None = None  # the current hour
+    # The current hour; before the first row, that row's hour
+    current: ForecastPeriod | None = None
     periods: list[ForecastPeriod] = field(default_factory=list)  # met.hu's rows
     hourly: list[ForecastPeriod] = field(default_factory=list)  # interpolated
     daily: list[ForecastValues] = field(default_factory=list)
@@ -702,8 +703,17 @@ def interpolate_hourly(periods: list[ForecastPeriod]) -> list[ForecastPeriod]:
 
 
 def find_current_hour(hourly: list[ForecastPeriod], now: datetime):
-    """Return the interpolated hour that contains now, if the forecast covers it."""
+    """Return the interpolated hour that contains now, if the forecast covers it.
+
+    Before the first row, that row's hour is shown early: met.hu drops a row 4
+    hours after its time, so a forecast with nothing saved to fill that in
+    starts with the next one. A row more than a period ahead is not shown.
+    """
     hour = now.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
+    if hourly:
+        ahead = hourly[0].forecast_time.astimezone(UTC) - hour
+        if timedelta(0) < ahead <= PERIOD:
+            return hourly[0]
     return next(
         (p for p in hourly if p.forecast_time.astimezone(UTC) == hour), None
     )
