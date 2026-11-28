@@ -220,11 +220,23 @@ async def test_the_saved_forecast_fills_the_first_download():
 
 
 async def test_without_anything_saved_the_next_row_is_shown():
-    """A first download at 17:22 starts at 19:00, and shows that row early."""
+    """A first download at 17:22 starts at 19:00: the hours before get its values."""
     data, _ = await _download(_coordinator(None))
 
-    assert (data.current.forecast_time.hour, data.current.temperature) == (19, 10)
+    assert (data.current.forecast_time.hour, data.current.temperature) == (17, 10)
+    assert [p.forecast_time.hour for p in data.hourly[:3]] == [17, 18, 19]
     assert [p.forecast_time.hour for p in data.periods] == [19, 1]
+
+
+def test_hours_saved_from_the_next_row_on_are_filled_when_loaded():
+    """2.0.1 saved the hours from the first row on; loaded before it, they fill."""
+    stored = forecast_to_dict(_later_download())
+    stored["hourly"] = stored["hourly"][2:]  # from 19:00
+
+    data = forecast_from_dict(stored, NOW)
+
+    assert [p.forecast_time.hour for p in data.hourly[:3]] == [17, 18, 19]
+    assert data.current.forecast_time.hour == 17
 
 
 @pytest.mark.parametrize("success", [True, False])

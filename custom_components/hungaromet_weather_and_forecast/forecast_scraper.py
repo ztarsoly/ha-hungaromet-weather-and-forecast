@@ -163,8 +163,7 @@ class ForecastData:
     settlement: str = ""
     location: tuple[float, float] | None = None  # latitude, longitude
     issued: datetime | None = None
-    # The current hour; before the first row, that row's hour
-    current: ForecastPeriod | None = None
+    current: ForecastPeriod | None = None  # the current hour
     periods: list[ForecastPeriod] = field(default_factory=list)  # met.hu's rows
     hourly: list[ForecastPeriod] = field(default_factory=list)  # interpolated
     daily: list[ForecastValues] = field(default_factory=list)
@@ -439,7 +438,7 @@ def _issue_time(text: str) -> datetime | None:
 
 def _derive(data: ForecastData, now: datetime) -> None:
     """Work out the hourly values, current hour and daily summary from the rows."""
-    data.hourly = interpolate_hourly(data.periods)
+    data.hourly = fill_to_first_row(interpolate_hourly(data.periods), now)
     if data.location:
         _follow_the_sun(data.hourly, data.location)
     data.current = find_current_hour(data.hourly, now)
@@ -507,7 +506,7 @@ def forecast_from_dict(
     )
     _derive(data, now)
     if hourly := stored.get("hourly"):
-        data.hourly = [period(p) for p in hourly]
+        data.hourly = fill_to_first_row([period(p) for p in hourly], now)
         if location:
             _follow_the_sun(data.hourly, location)
         data.current = find_current_hour(data.hourly, now)
@@ -702,18 +701,34 @@ def interpolate_hourly(periods: list[ForecastPeriod]) -> list[ForecastPeriod]:
     return hourly
 
 
-def find_current_hour(hourly: list[ForecastPeriod], now: datetime):
-    """Return the interpolated hour that contains now, if the forecast covers it.
+def fill_to_first_row(
+    hourly: list[ForecastPeriod], now: datetime
+) -> list[ForecastPeriod]:
+    """Add the hours from now up to a forecast's first one, with its values.
 
-    Before the first row, that row's hour is shown early: met.hu drops a row 4
-    hours after its time, so a forecast with nothing saved to fill that in
-    starts with the next one. A row more than a period ahead is not shown.
+    met.hu drops a row 4 hours after its time, and a new issue can start with a
+    later row still, so a forecast may start after the current hour. The rows of
+    an earlier forecast fill that in first, see keep_dropped_row; the hours no
+    row covers get the first one's values.
     """
+    if not hourly:
+        return hourly
     hour = now.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
-    if hourly:
-        ahead = hourly[0].forecast_time.astimezone(UTC) - hour
-        if timedelta(0) < ahead <= PERIOD:
-            return hourly[0]
+    ahead = hourly[0].forecast_time.astimezone(UTC) - hour
+    # Nothing to add when the first hour is this one or an earlier one
+    missing = [
+        replace(
+            hourly[0],
+            forecast_time=(hour + timedelta(hours=step)).astimezone(HUNGARY_TZ),
+        )
+        for step in range(round(ahead.total_seconds() / 3600))
+    ]
+    return [*missing, *hourly]
+
+
+def find_current_hour(hourly: list[ForecastPeriod], now: datetime):
+    """Return the interpolated hour that contains now, if the forecast covers it."""
+    hour = now.astimezone(UTC).replace(minute=0, second=0, microsecond=0)
     return next(
         (p for p in hourly if p.forecast_time.astimezone(UTC) == hour), None
     )

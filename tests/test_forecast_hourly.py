@@ -172,36 +172,99 @@ def test_find_current_hour():
 
 
 @pytest.mark.parametrize(
-    ("day", "hour", "shown"),
+    ("hour", "filled"),
     [
-        # met.hu dropped the 13:00 row at 17:00: the 19:00 row is shown early
-        (28, 17, True),
-        (28, 18, True),
-        # Up to a period ahead
-        (28, 13, True),
-        (28, 12, False),
+        # met.hu dropped the 13:00 row at 17:00
+        (17, [17, 18]),
+        # A new issue can start 6 hours ahead
+        (13, [13, 14, 15, 16, 17, 18]),
+        # However far ahead the first row is
+        (0, list(range(0, 19))),
+        # The forecast covers the hour already
+        (19, []),
     ],
 )
-def test_the_next_row_is_shown_before_it_starts(day, hour, shown):
-    """Without the current hour, the first row stands in if it starts soon."""
-    hourly = interpolate_hourly(
-        [_at(28, 19, temperature=10), _at(29, 1, temperature=8)]
+def test_the_hours_before_the_first_row_get_its_values(hour, filled):
+    """The hourly forecast starts at the current hour, with the next row's values."""
+    rows = [
+        _at(28, 19, temperature=10, precipitation=6.0),
+        _at(29, 1, temperature=8),
+    ]
+    now = datetime(2026, 10, 28, hour, 38, tzinfo=HUNGARY_TZ)
+
+    data = _download(*rows, now=now)
+
+    hours = [p.forecast_time.hour for p in data.hourly]
+    assert hours == [*filled, 19, 20, 21, 22, 23, 0, 1]
+    assert {(p.temperature, p.precipitation) for p in data.hourly[: len(filled)]} <= {
+        (10, 1.0)
+    }
+    assert data.current is data.hourly[0]
+
+
+def test_a_forecast_starting_days_ahead_is_filled_from_now():
+    """There is no limit to the hours the first row stands for."""
+    now = datetime(2026, 10, 26, 17, 38, tzinfo=HUNGARY_TZ)
+
+    data = _download(_at(28, 19, temperature=10), now=now)
+
+    assert len(data.hourly) == 51  # 50 hours, plus the row's own
+    assert data.current is data.hourly[0]
+    assert {p.temperature for p in data.hourly} == {10}
+
+
+@pytest.mark.parametrize(
+    ("saved_rows", "temperatures"),
+    [
+        # The saved rows cover the hours up to the new table: 17:00 to 19:00 and
+        # on to 01:00 come from them
+        ([(28, 13, 16), (28, 19, 10), (29, 1, 4)], [12.0, 11.0, 10.0, 9.0]),
+        # A saved forecast that starts later: its first row fills the hours before
+        ([(29, 1, 4)], [4, 4, 4, 4]),
+    ],
+)
+def test_the_saved_rows_fill_the_missing_hours_first(saved_rows, temperatures):
+    """The new table's first row stands in only where no saved row can."""
+    now = datetime(2026, 10, 28, 17, 22, tzinfo=HUNGARY_TZ)
+    saved = ForecastData(
+        settlement="X",
+        periods=[_at(day, hour, temperature=value) for day, hour, value in saved_rows],
+    )
+    new = _download(_at(29, 7, temperature=-2), now=now)
+
+    data = keep_dropped_row(new, saved, now)
+
+    assert data.current.forecast_time.hour == 17
+    start = data.hourly.index(data.current)
+    assert [p.temperature for p in data.hourly[start : start + 4]] == temperatures
+    assert data.hourly[-1].temperature == -2
+
+
+def test_filled_hours_follow_the_sun():
+    """A clear next row is not sunny in the hours of the night before it."""
+    now = datetime(2026, 10, 28, 4, 30, tzinfo=HUNGARY_TZ)
+    data = ForecastData(
+        settlement="X",
+        location=(47.5, 21.6),
+        periods=[_at(28, 13, weather_condition="sunny")],
     )
 
-    current = find_current_hour(
-        hourly, datetime(2026, 10, day, hour, 38, tzinfo=HUNGARY_TZ)
+    _derive(data, now)
+
+    assert (data.current.forecast_time.hour, data.current.weather_condition) == (
+        4,
+        "clear-night",
     )
+    assert data.hourly[-1].weather_condition == "sunny"
 
-    assert current is (hourly[0] if shown else None)
 
-
-def test_the_next_row_of_tomorrow_brings_tomorrows_summary():
-    """Late in the evening the next row, and so the day, is tomorrow's."""
+def test_a_day_without_rows_left_shows_the_next_days_summary():
+    """Late in the evening the rows left are tomorrow's, and so is the summary."""
     now = datetime(2026, 10, 28, 23, 30, tzinfo=HUNGARY_TZ)
 
     data = _download(_at(29, 1, temperature=8, temperature_min=3), now=now)
 
-    assert data.current.forecast_time == data.periods[0].forecast_time
+    assert data.current.forecast_time.hour == 23
     coordinator = MagicMock(data=data)
     sensor = object.__new__(s.ForecastSensor)
     sensor.coordinator = coordinator
@@ -254,8 +317,8 @@ def test_dropped_row_is_kept_from_the_previous_download():
         now=datetime(2026, 10, 28, 16, 58, tzinfo=HUNGARY_TZ),
     )
     new = _download(_at(28, 19, temperature=10), _at(29, 1, temperature=8), now=now)
-    # Without the dropped row there is no 17:00 hour: the 19:00 row is shown early
-    assert new.current.forecast_time.hour == 19
+    # Without the dropped row the 17:00 hour has the 19:00 row's values
+    assert (new.current.forecast_time.hour, new.current.temperature) == (17, 10)
 
     data = keep_dropped_row(new, previous, now)
 

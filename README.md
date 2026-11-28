@@ -168,7 +168,7 @@ A met.hu 6 óránként (01, 07, 13 és 19 órakor) ad egy előrejelzési sort, a
 
 A met.hu a sorokat 4 órával az időpontjuk után leveszi az oldalról. Az integráció a mai nap korábbi sorait megtartja, hogy a napi minimum és maximum egész nap helyes maradjon.
 
-Ha nincs mentett példány (egy új bejegyzésnél vagy az előrejelzés településének módosítása után), a levett sorok hiányoznak. Ha ezért az aktuális órát egyik sor sem tartalmazza, az integráció a következő, legfeljebb 6 órán belül kezdődő sor értékeit mutatja előre, rendszerint legfeljebb 2 órán át. A napi minimum és maximum ilyenkor annak a napnak a megmaradt soraiból számított, amelyre ez a sor esik: 23:00 és éjfél között ez már a következő nap.
+Ha egy letöltött előrejelzés az aktuális óránál későbbi sorral kezdődik, a hiányzó órák a korábban letöltött (újraindítás után a mentett) előrejelzés soraiból pótolódnak. Amelyik órát ezek sem fedik le, például egy új bejegyzésnél vagy az előrejelzés településének módosítása után, az a rendelkezésre álló első sor értékeit kapja (a derült idő a nap állása szerint napos vagy derült éjszaka), bármilyen messze van is az a sor. Az órás előrejelzés így mindig az aktuális órától indul. A napi minimum és maximum a mai nap meglévő soraiból számított; ha mára nincs sor (például egy új bejegyzésnél 23:00 és éjfél között), akkor a következő napé.
 
 ### Radarképek
 
@@ -202,7 +202,7 @@ Az érzékelők, az időjárás-entitás és a radarképek *ismeretlen* érték 
 
 - ha a legutóbbi letöltésük nem sikerült, a következő sikeres letöltésig (az előrejelzés kivételével, lásd lent);
 - ha a sikeres letöltésben nincs értékük, például az állomások nem mérik az adott mennyiséget, vagy a met.hu időjárás-leírása ismeretlen (ilyenkor az adott órának nincs időjárási helyzete);
-- ha az előrejelzés nem tartalmazza az aktuális órát, és 6 órán belül kezdődő sora sincs (lásd az [Előrejelzés](#előrejelzés) részt). Ilyenkor az időjárás-entitás előrejelzése sem érhető el.
+- ha az előrejelzés már nem tartalmazza az aktuális órát, mert véget ért. Ilyenkor az időjárás-entitás előrejelzése sem érhető el.
 
 **Kivétel az előrejelzés:** ha a letöltése nem sikerül, az előrejelzés-érzékelők és az időjárás-entitás az utolsó letöltött (újraindítás után a mentett) előrejelzést követik óráról órára. Csak akkor nem elérhetők, ha abban már nincs benne az aktuális óra. A riasztás és a figyelmeztetés ilyenkor is nem elérhető.
 

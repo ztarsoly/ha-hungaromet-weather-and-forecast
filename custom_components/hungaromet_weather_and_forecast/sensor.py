@@ -113,12 +113,16 @@ FORECAST_SENSORS = (
 
 
 def _today(data: ForecastData) -> ForecastValues | None:
-    """Return the daily summary for the current period's day."""
+    """Return the daily summary for the current hour's day.
+
+    The next day's if no row of that day is left, as late in the evening for a
+    forecast with nothing saved.
+    """
     if data.current is None or data.current.forecast_time is None:
         return None
     day = data.current.forecast_time.date()
     return next(
-        (d for d in data.daily if d.forecast_time and d.forecast_time.date() == day),
+        (d for d in data.daily if d.forecast_time and d.forecast_time.date() >= day),
         None,
     )
 
