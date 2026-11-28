@@ -524,22 +524,32 @@ def keep_dropped_row(
     day's minimum (07:00) and maximum (13:00), so by the evening today's
     summary would otherwise come from the last row alone. The rows come from
     the previous download.
+
+    If the new rows start after now and none of those starts by now, the last
+    earlier row that does is put back too, however old it is, so that the hours
+    up to the new rows are interpolated from it.
     """
     if previous is None or not data.periods or data.periods[0].forecast_time is None:
         return data
     first = data.periods[0].forecast_time.astimezone(UTC)
     now_utc = now.astimezone(UTC)
     today = now.astimezone(HUNGARY_TZ).date()
-    kept = [
+    earlier = [
         p
         for p in previous.periods
-        if p.forecast_time
-        and p.forecast_time.astimezone(UTC) < first
-        and (
-            p.forecast_time.astimezone(HUNGARY_TZ).date() == today
-            or now_utc < p.forecast_time.astimezone(UTC) + PERIOD
-        )
+        if p.forecast_time and p.forecast_time.astimezone(UTC) < first
     ]
+    kept = [
+        p
+        for p in earlier
+        if p.forecast_time.astimezone(HUNGARY_TZ).date() == today
+        or now_utc < p.forecast_time.astimezone(UTC) + PERIOD
+    ]
+    if first > now_utc and not any(
+        p.forecast_time.astimezone(UTC) <= now_utc for p in kept
+    ):
+        started = [p for p in earlier if p.forecast_time.astimezone(UTC) <= now_utc]
+        kept = [*started[-1:], *kept]
     if not kept:
         return data
     data.periods = [*kept, *data.periods]
@@ -617,11 +627,16 @@ def _towards(
     return replace(hour, **values)
 
 
+def _whole(value: float) -> float:
+    """Round to a whole number, as met.hu's rows have, with halves going up."""
+    return float(math.floor(value + 0.5))
+
+
 def _lerp(start: float | None, end: float | None, fraction: float):
     """Interpolate linearly; without both ends, keep the start value."""
     if start is None or end is None:
         return start
-    return round(start + (end - start) * fraction, 2)
+    return _whole(start + (end - start) * fraction)
 
 
 def _lerp_bearing(start: float | None, end: float | None, fraction: float):
@@ -629,7 +644,7 @@ def _lerp_bearing(start: float | None, end: float | None, fraction: float):
     if start is None or end is None:
         return start
     turn = (end - start + 180) % 360 - 180
-    return round((start + turn * fraction) % 360, 2)
+    return _whole(start + turn * fraction) % 360
 
 
 def bearing_to_direction(bearing: float) -> str:
@@ -638,13 +653,16 @@ def bearing_to_direction(bearing: float) -> str:
 
 
 def mean_bearing(bearings: list[float]) -> float | None:
-    """Return the compass average of bearings; None when they cancel out."""
+    """Return the compass average of bearings, as a whole number.
+
+    None when they cancel out.
+    """
     radians = [math.radians(bearing) for bearing in bearings]
     east = sum(math.sin(r) for r in radians)
     north = sum(math.cos(r) for r in radians)
     if math.hypot(east, north) < 1e-9:
         return None
-    return round(math.degrees(math.atan2(east, north)), 2) % 360
+    return _whole(math.degrees(math.atan2(east, north))) % 360
 
 
 def beaufort_force(speed: float) -> str:
@@ -754,6 +772,12 @@ def _values(rows: list[ForecastPeriod], name: str) -> list[float]:
     return [value for row in rows if (value := getattr(row, name)) is not None]
 
 
+def _average(rows: list[ForecastPeriod], name: str) -> float | None:
+    """Return the rows' average of a value, as a whole number like the rows'."""
+    values = _values(rows, name)
+    return _whole(sum(values) / len(values)) if values else None
+
+
 def _day_summary(rows: list[ForecastPeriod]) -> ForecastValues:
     """Summarise one day's rows; the middle row stands for its weather condition.
 
@@ -765,9 +789,6 @@ def _day_summary(rows: list[ForecastPeriod]) -> ForecastValues:
     lows = _values(rows, "temperature_min") or temperatures
     highs = _values(rows, "temperature_max") or temperatures
     precipitation = _values(rows, "precipitation")
-    pressures = _values(rows, "pressure")
-    clouds = _values(rows, "cloud_cover")
-    speeds = _values(rows, "wind_speed")
     middle = rows[len(rows) // 2].weather_condition
     return ForecastValues(
         # The start of the day, in Hungarian time
@@ -779,9 +800,9 @@ def _day_summary(rows: list[ForecastPeriod]) -> ForecastValues:
         temperature_max=max(highs, default=None),
         weather_condition="sunny" if middle == "clear-night" else middle,
         precipitation=round(sum(precipitation), 2) if precipitation else None,
-        cloud_cover=round(sum(clouds) / len(clouds), 2) if clouds else None,
-        wind_speed=round(sum(speeds) / len(speeds), 2) if speeds else None,
+        cloud_cover=_average(rows, "cloud_cover"),
+        wind_speed=_average(rows, "wind_speed"),
         wind_gust=max(_values(rows, "wind_gust"), default=None),
         wind_bearing=mean_bearing(_values(rows, "wind_bearing")),
-        pressure=round(sum(pressures) / len(pressures), 2) if pressures else None,
+        pressure=_average(rows, "pressure"),
     )

@@ -47,15 +47,29 @@ def test_temperature_example():
     ]
 
 
-def test_values_are_rounded_to_two_decimals():
-    """Test values are rounded to two decimals."""
+def test_calculated_values_are_whole_numbers_like_the_rows():
+    """Halves go up, below zero too."""
     hourly = interpolate_hourly(
-        [_at(28, 13, temperature=16, pressure=1020), _at(28, 19, temperature=15, pressure=1022)]
+        [
+            _at(28, 13, temperature=16, pressure=1020, wind_speed=-1),
+            _at(28, 19, temperature=13, pressure=1022, wind_speed=-4),
+        ]
     )
 
-    assert hourly[1].temperature == 15.83  # 16 - 1/6
-    assert hourly[1].pressure == 1020.33
-    assert hourly[4].temperature == 15.33
+    # 15.5, 15, 14.5, 14, 13.5
+    assert [p.temperature for p in hourly[1:6]] == [16, 15, 15, 14, 14]
+    assert [p.pressure for p in hourly[1:6]] == [1020, 1021, 1021, 1021, 1022]
+    # -1.5, -2, -2.5, -3, -3.5
+    assert [p.wind_speed for p in hourly[1:6]] == [-1, -2, -2, -3, -3]
+
+
+def test_a_bearing_rounded_up_to_north_is_0():
+    """359.5 degrees is 0, not 360."""
+    hourly = interpolate_hourly(
+        [_at(28, 13, wind_bearing=359), _at(28, 19, wind_bearing=2)]
+    )
+
+    assert hourly[1].wind_bearing == 0
 
 
 def test_period_values_belong_to_the_whole_period():
@@ -81,7 +95,7 @@ def test_cloud_cover_changes_like_temperature():
     )
 
     assert [p.cloud_cover for p in hourly] == [
-        34.0, 41.67, 49.33, 57.0, 64.67, 72.33, 80
+        34, 42, 49, 57, 65, 72, 80
     ]
 
 
@@ -221,6 +235,14 @@ def test_a_forecast_starting_days_ahead_is_filled_from_now():
         ([(28, 13, 16), (28, 19, 10), (29, 1, 4)], [12.0, 11.0, 10.0, 9.0]),
         # A saved forecast that starts later: its first row fills the hours before
         ([(29, 1, 4)], [4, 4, 4, 4]),
+        # Only ended rows of an earlier day started by now: the hours are
+        # interpolated from the last of them to the new table
+        ([(26, 19, 30), (27, 13, 14)], [3, 3, 3, 2]),
+        # With a row of today, the earlier day's is not needed
+        (
+            [(27, 13, 14), (28, 13, 16), (28, 19, 10), (29, 1, 4)],
+            [12.0, 11.0, 10.0, 9.0],
+        ),
     ],
 )
 def test_the_saved_rows_fill_the_missing_hours_first(saved_rows, temperatures):
@@ -238,6 +260,8 @@ def test_the_saved_rows_fill_the_missing_hours_first(saved_rows, temperatures):
     start = data.hourly.index(data.current)
     assert [p.temperature for p in data.hourly[start : start + 4]] == temperatures
     assert data.hourly[-1].temperature == -2
+    # An earlier day's row has no daily summary
+    assert data.daily[0].forecast_time.day >= 28
 
 
 def test_filled_hours_follow_the_sun():
@@ -338,23 +362,23 @@ def test_no_previous_download_leaves_the_forecast_unchanged():
 
 
 @pytest.mark.parametrize(
-    "previous_rows",
+    ("previous_rows", "new_hours"),
     [
         # The same rows: nothing was dropped
-        [_at(28, 19, temperature=10)],
-        # Yesterday's rows have ended and are not today's
-        [_at(27, 13, temperature=4)],
+        ([_at(28, 19, temperature=10)], [19]),
+        # Yesterday's rows have ended and the new table covers the current hour
+        ([_at(27, 13, temperature=4)], [13, 19]),
     ],
 )
-def test_only_running_or_todays_rows_are_kept(previous_rows):
+def test_only_running_or_todays_rows_are_kept(previous_rows, new_hours):
     """Test only running or today's rows are kept."""
     now = datetime(2026, 10, 28, 17, 22, tzinfo=HUNGARY_TZ)
     previous = _download(*previous_rows, now=now)
-    new = _download(_at(28, 19, temperature=10), now=now)
+    new = _download(*(_at(28, hour, temperature=10) for hour in new_hours), now=now)
 
     data = keep_dropped_row(new, previous, now)
 
-    assert [p.forecast_time.hour for p in data.periods] == [19]
+    assert [p.forecast_time.hour for p in data.periods] == new_hours
 
 
 def test_todays_minimum_and_maximum_survive_the_evening():
@@ -409,7 +433,7 @@ def test_daily_forecast_starts_at_today_after_midnight():
     assert (data.daily[0].temperature_min, data.daily[0].temperature_max) == (6, 8)
     # The hourly forecast still has the hours before 01:00
     assert data.current.forecast_time.hour == 0
-    assert data.current.temperature == 8.33
+    assert data.current.temperature == 8
 
 
 def test_ended_period_is_not_kept():
@@ -480,10 +504,10 @@ def test_hours_continue_from_the_recorded_values():
     data = continue_from_recorded(new, _night_before(), AFTER)
 
     assert data.current.forecast_time.hour == 2
-    assert (data.current.temperature, data.current.pressure) == (0.83, 1017.83)
+    assert (data.current.temperature, data.current.pressure) == (1, 1018)
     temperatures = {p.forecast_time.hour: p.temperature for p in data.hourly}
     assert temperatures[1] == 1.0  # recorded
-    assert temperatures[4] == 0.5
+    assert temperatures[4] == 1  # 0.5, halves go up
     assert temperatures[7] == 0.0  # the row itself
 
 
@@ -525,7 +549,7 @@ def test_the_wind_bearing_turns_from_the_recorded_bearing():
 
     data = continue_from_recorded(new, previous, AFTER)
 
-    assert (data.current.wind_bearing, data.current.wind_direction) == (353.33, "n")
+    assert (data.current.wind_bearing, data.current.wind_direction) == (353, "n")
 
 
 def test_values_missing_from_a_row_are_left_as_they_are():
@@ -590,7 +614,7 @@ async def test_coordinator_continues_from_the_recorded_values():
     ):
         data = await coordinator._async_update_data()
 
-    assert data.current.temperature == 0.83
+    assert data.current.temperature == 1  # not the new rows' 5
 
 
 DEBRECEN_LOCATION = (47.543, 21.648)

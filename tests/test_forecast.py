@@ -221,7 +221,7 @@ def test_daily_summary(data):
     assert (today.temperature_min, today.temperature_max) == (-1, 21)
     assert today.temperature == round((4 + 16 + 0) / 3, 2)
     assert today.precipitation == 4.5
-    assert today.wind_speed == round((8 + 6 + 2) / 3, 2)  # the average of the mean wind
+    assert today.wind_speed == 5  # the average of the mean wind, 5.33
     assert today.wind_gust == 23  # the highest
     assert today.weather_condition == "pouring"  # the middle row
     assert today.cloud_cover == 40
@@ -262,7 +262,27 @@ def test_daily_cloud_cover_is_the_average():
     assert aggregate_daily(rows)[0].cloud_cover == 50
     # A row without cloud cover does not count
     rows = _day_rows({"cloud_cover": 90}, {}, {"cloud_cover": 15})
-    assert aggregate_daily(rows)[0].cloud_cover == 52.5
+    assert aggregate_daily(rows)[0].cloud_cover == 53  # 52.5, halves go up
+
+
+def test_daily_averages_are_whole_numbers_like_the_rows():
+    """Cloud cover, wind and pressure averages are rounded, halves upwards."""
+    rows = _day_rows(
+        {"cloud_cover": 80, "wind_speed": 10, "pressure": 1020, "wind_bearing": 10},
+        {"cloud_cover": 72, "wind_speed": 13, "pressure": 1021, "wind_bearing": 13},
+        {"cloud_cover": 16},
+        {"cloud_cover": 5},
+    )
+
+    (day,) = aggregate_daily(rows)
+
+    # 43.25, 11.5, 1020.5 and 11.5
+    assert (day.cloud_cover, day.wind_speed, day.pressure, day.wind_bearing) == (
+        43,
+        12,
+        1021,
+        12,
+    )
 
 
 @pytest.mark.parametrize(
@@ -894,7 +914,7 @@ def test_weather_current_conditions(data):
     assert entity.native_temperature == 10.0
     assert entity.native_pressure == 1022
     assert entity.native_wind_speed == 7.0
-    assert entity.native_wind_gust_speed == 21.5
+    assert entity.native_wind_gust_speed == 22
     assert entity.wind_bearing == 12
     assert entity.cloud_coverage == 40
     assert entity.extra_state_attributes == {"precipitation": 0.25}
